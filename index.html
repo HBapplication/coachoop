@@ -492,6 +492,43 @@
             gap: 6px;
         }
 
+        .note-divider {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 10px 0;
+        }
+
+        .player-details {
+            position: relative;
+        }
+
+        .player-details.collapsed {
+            max-height: 128px;
+            overflow: hidden;
+        }
+
+        .player-details.collapsed::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 28px;
+            background: linear-gradient(to bottom, transparent, #0f172a);
+        }
+
+        .player-toggle-btn {
+            background: none;
+            border: none;
+            color: var(--info);
+            font-size: 0.8rem;
+            cursor: pointer;
+            margin-top: 8px;
+            padding: 0;
+            text-decoration: underline;
+            display: block;
+        }
+
         /* הערות */
         .note-card {
             background: #0f172a;
@@ -1863,7 +1900,7 @@
         let playerNotesDraft = [];
 
         function addPlayerNoteField(title = '', text = '') {
-            playerNotesDraft.push({
+            playerNotesDraft.unshift({
                 id: 'pn_' + Date.now() + Math.random().toString(36).slice(2, 7),
                 title: title,
                 text: text
@@ -2000,16 +2037,29 @@
                     ? `<p style="font-size:0.85rem; margin-top:4px;">👪 ${p.parent2Name || 'הורה 2'}${p.parent2Phone ? ' - <a href="tel:' + p.parent2Phone.replace(/[^0-9+]/g, '') + '" style="color:var(--info);">' + p.parent2Phone + '</a>' : ''}</p>`
                     : '';
 
+                let notesHtml = '';
+                if (Array.isArray(p.notes) && p.notes.length > 0) {
+                    notesHtml = p.notes.map((n, idx) => `
+                        ${idx > 0 ? '<hr class="note-divider">' : ''}
+                        <p style="font-size:0.85rem; margin-top:4px;">${n.title ? '<strong>' + n.title + ':</strong> ' : ''}${n.text || ''}</p>
+                    `).join('');
+                } else if (typeof p.notes === 'string' && p.notes) {
+                    notesHtml = `<p style="font-size:0.85rem; margin-top:4px;">${p.notes}</p>`;
+                }
+
+                const detailsId = 'player-details-' + p.id;
+
                 item.innerHTML = `
-                    <div>
+                    <div style="flex:1; min-width:0;">
                         <h3 style="color:var(--primary);">${p.number ? '#' + p.number + ' - ' : ''}${p.name}</h3>
-                        <p style="font-size:0.85rem; color:var(--text-muted);">${p.position ? 'עמדה: ' + p.position : ''}</p>
-                        ${phoneLine}
-                        ${parent1Line}
-                        ${parent2Line}
-                        ${Array.isArray(p.notes) && p.notes.length > 0
-                            ? p.notes.map(n => `<p style="font-size:0.85rem; margin-top:4px;">${n.title ? '<strong>' + n.title + ':</strong> ' : ''}${n.text || ''}</p>`).join('')
-                            : (typeof p.notes === 'string' && p.notes ? `<p style="font-size:0.85rem; margin-top:4px;">${p.notes}</p>` : '')}
+                        <div id="${detailsId}" class="player-details collapsed">
+                            <p style="font-size:0.85rem; color:var(--text-muted);">${p.position ? 'עמדה: ' + p.position : ''}</p>
+                            ${phoneLine}
+                            ${parent1Line}
+                            ${parent2Line}
+                            ${notesHtml}
+                        </div>
+                        <button type="button" class="player-toggle-btn" style="display:none;" onclick="togglePlayerDetails('${p.id}', this)">הצג עוד ⌄</button>
                     </div>
                     <div class="player-actions">
                         <button class="btn btn-secondary" style="padding: 6px 10px; font-size:0.8rem;" onclick="openPlayerModal('${p.id}')">ערוך</button>
@@ -2017,7 +2067,26 @@
                     </div>
                 `;
                 container.appendChild(item);
+
+                const detailsEl = item.querySelector('#' + detailsId);
+                const toggleBtn = item.querySelector('.player-toggle-btn');
+                if (detailsEl && toggleBtn && detailsEl.scrollHeight > detailsEl.clientHeight + 2) {
+                    toggleBtn.style.display = 'block';
+                }
             });
+        }
+
+        function togglePlayerDetails(playerId, btn) {
+            const detailsEl = document.getElementById('player-details-' + playerId);
+            if (!detailsEl) return;
+            const isCollapsed = detailsEl.classList.contains('collapsed');
+            if (isCollapsed) {
+                detailsEl.classList.remove('collapsed');
+                btn.innerText = 'הצג פחות ⌃';
+            } else {
+                detailsEl.classList.add('collapsed');
+                btn.innerText = 'הצג עוד ⌄';
+            }
         }
 
         function deletePlayer(id) {
@@ -2053,7 +2122,7 @@
                 }
                 alert('ההערה עודכנה בהצלחה!');
             } else {
-                team.notes.push({
+                team.notes.unshift({
                     id: 'note_' + Date.now(),
                     title: title,
                     date: date,
@@ -2123,7 +2192,7 @@
                 return;
             }
 
-            filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+            // ההערות מוצגות לפי סדר הוספתן - הערה חדשה מוצגת ראשונה
 
             filtered.forEach(note => {
                 const card = document.createElement('div');
