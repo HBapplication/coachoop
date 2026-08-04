@@ -1210,7 +1210,7 @@
                 card.className = 'team-card';
                 card.innerHTML = `
                     <div class="team-info">
-                        <h3>${team.name}</h3>
+                        <h3>${team.name} (${(team.players || []).length})</h3>
                         <p>מאמן: ${team.coach}</p>
                         ${!isMine ? `<p class="team-owner-tag">👤 שייכת ל: ${team.ownerEmail || 'לא ידוע'}</p>` : ''}
                     </div>
