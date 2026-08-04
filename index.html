@@ -782,7 +782,7 @@
         <!-- 2. ניהול ועריכת שחקנים -->
         <!-- ========================================== -->
         <div id="view-players-list" class="view">
-            <h2>סגל שחקנים</h2>
+            <h2 id="players-list-title">סגל שחקנים</h2>
 
             <button class="btn" style="margin-bottom: 10px;" onclick="openPlayerModal()">➕ הוסף שחקן חדש</button>
 
@@ -824,7 +824,8 @@
                 </div>
                 <div class="form-group">
                     <label>הערות אישיות על השחקן:</label>
-                    <textarea id="player-notes" placeholder="חוזקות, דגשים, נקודות לשיפור..."></textarea>
+                    <div id="player-notes-list"></div>
+                    <button type="button" class="btn btn-secondary" style="margin-top:8px;" onclick="addPlayerNoteField()">➕ הוסף הערה</button>
                 </div>
                 <div class="actions-row">
                     <button class="btn" onclick="savePlayer()">שמור שחקן</button>
@@ -850,6 +851,10 @@
                 <h3 id="note-form-title">➕ הוסף הערה חדשה</h3>
                 <br>
                 <input type="hidden" id="edit-note-id">
+                <div class="form-group">
+                    <label>כותרת ההערה:</label>
+                    <input type="text" id="new-note-title" placeholder="לדוגמה: טקטיקה למשחק הבא">
+                </div>
                 <div class="form-group">
                     <label>תאריך ההערה:</label>
                     <input type="date" id="new-note-date">
@@ -1826,7 +1831,18 @@
                     document.getElementById('player-parent1-phone').value = player.parent1Phone || '';
                     document.getElementById('player-parent2-name').value = player.parent2Name || '';
                     document.getElementById('player-parent2-phone').value = player.parent2Phone || '';
-                    document.getElementById('player-notes').value = player.notes || '';
+
+                    if (Array.isArray(player.notes)) {
+                        playerNotesDraft = player.notes.map(n => ({
+                            id: n.id || ('pn_' + Date.now() + Math.random().toString(36).slice(2, 7)),
+                            title: n.title || '',
+                            text: n.text || ''
+                        }));
+                    } else if (typeof player.notes === 'string' && player.notes.trim()) {
+                        playerNotesDraft = [{ id: 'pn_legacy_' + Date.now(), title: 'הערה', text: player.notes }];
+                    } else {
+                        playerNotesDraft = [];
+                    }
                 }
             } else {
                 document.getElementById('player-form-title').innerText = 'הוספת שחקן חדש';
@@ -1839,8 +1855,59 @@
                 document.getElementById('player-parent1-phone').value = '';
                 document.getElementById('player-parent2-name').value = '';
                 document.getElementById('player-parent2-phone').value = '';
-                document.getElementById('player-notes').value = '';
+                playerNotesDraft = [];
             }
+            renderPlayerNotesDraft();
+        }
+
+        let playerNotesDraft = [];
+
+        function addPlayerNoteField(title = '', text = '') {
+            playerNotesDraft.push({
+                id: 'pn_' + Date.now() + Math.random().toString(36).slice(2, 7),
+                title: title,
+                text: text
+            });
+            renderPlayerNotesDraft();
+        }
+
+        function removePlayerNoteField(id) {
+            playerNotesDraft = playerNotesDraft.filter(n => n.id !== id);
+            renderPlayerNotesDraft();
+        }
+
+        function updatePlayerNoteDraftField(id, field, value) {
+            const note = playerNotesDraft.find(n => n.id === id);
+            if (note) note[field] = value;
+        }
+
+        function renderPlayerNotesDraft() {
+            const container = document.getElementById('player-notes-list');
+            if (!container) return;
+            container.innerHTML = '';
+
+            if (playerNotesDraft.length === 0) {
+                container.innerHTML = '<p style="font-size:0.85rem; color:var(--text-muted);">אין הערות עדיין.</p>';
+                return;
+            }
+
+            playerNotesDraft.forEach(note => {
+                const row = document.createElement('div');
+                row.className = 'card';
+                row.style.marginBottom = '8px';
+                row.innerHTML = `
+                    <div class="form-group">
+                        <label>כותרת ההערה:</label>
+                        <input type="text" placeholder="לדוגמה: חוזקות" value="${(note.title || '').replace(/"/g, '&quot;')}" oninput="updatePlayerNoteDraftField('${note.id}','title', this.value)">
+                    </div>
+                    <div class="form-group">
+                        <label>תוכן ההערה:</label>
+                        <textarea placeholder="פרטי ההערה..." oninput="updatePlayerNoteDraftField('${note.id}','text', this.value)">${note.text || ''}</textarea>
+                    </div>
+                    <button type="button" class="btn btn-danger" style="padding:4px 10px; font-size:0.75rem;" onclick="removePlayerNoteField('${note.id}')">מחק הערה</button>
+                `;
+                container.appendChild(row);
+            });
         }
 
         function closePlayerModal() {
@@ -1856,7 +1923,9 @@
             const parent1Phone = document.getElementById('player-parent1-phone').value.trim();
             const parent2Name = document.getElementById('player-parent2-name').value.trim();
             const parent2Phone = document.getElementById('player-parent2-phone').value.trim();
-            const notes = document.getElementById('player-notes').value.trim();
+            const notes = playerNotesDraft
+                .map(n => ({ id: n.id, title: (n.title || '').trim(), text: (n.text || '').trim() }))
+                .filter(n => n.title || n.text);
             const editId = document.getElementById('edit-player-id').value;
 
             if (!name) {
@@ -1905,6 +1974,12 @@
             container.innerHTML = '';
 
             const team = getCurrentTeam();
+            const titleEl = document.getElementById('players-list-title');
+            if (titleEl) {
+                const count = (team && team.players) ? team.players.length : 0;
+                titleEl.innerText = `סגל שחקנים (${count})`;
+            }
+
             if (!team || !team.players || team.players.length === 0) {
                 container.innerHTML = '<div class="card"><p style="color:var(--text-muted)">אין שחקנים בסגל עדיין.</p></div>';
                 return;
@@ -1932,7 +2007,9 @@
                         ${phoneLine}
                         ${parent1Line}
                         ${parent2Line}
-                        <p style="font-size:0.85rem; margin-top:4px;">${p.notes || ''}</p>
+                        ${Array.isArray(p.notes) && p.notes.length > 0
+                            ? p.notes.map(n => `<p style="font-size:0.85rem; margin-top:4px;">${n.title ? '<strong>' + n.title + ':</strong> ' : ''}${n.text || ''}</p>`).join('')
+                            : (typeof p.notes === 'string' && p.notes ? `<p style="font-size:0.85rem; margin-top:4px;">${p.notes}</p>` : '')}
                     </div>
                     <div class="player-actions">
                         <button class="btn btn-secondary" style="padding: 6px 10px; font-size:0.8rem;" onclick="openPlayerModal('${p.id}')">ערוך</button>
@@ -1954,6 +2031,7 @@
 
         // --- 4. מודול הערות מרובות (עריכה + חיפוש בטווח תאריכים) ---
         function addOrUpdateCustomNote() {
+            const title = document.getElementById('new-note-title').value.trim();
             const date = document.getElementById('new-note-date').value;
             const text = document.getElementById('new-note-text').value.trim();
             const editId = document.getElementById('edit-note-id').value;
@@ -1969,6 +2047,7 @@
             if (editId) {
                 const note = team.notes.find(n => n.id === editId);
                 if (note) {
+                    note.title = title;
                     note.date = date;
                     note.text = text;
                 }
@@ -1976,6 +2055,7 @@
             } else {
                 team.notes.push({
                     id: 'note_' + Date.now(),
+                    title: title,
                     date: date,
                     text: text
                 });
@@ -1993,6 +2073,7 @@
 
             if (note) {
                 document.getElementById('edit-note-id').value = note.id;
+                document.getElementById('new-note-title').value = note.title || '';
                 document.getElementById('new-note-date').value = note.date;
                 document.getElementById('new-note-text').value = note.text;
 
@@ -2006,6 +2087,7 @@
 
         function cancelEditNote() {
             document.getElementById('edit-note-id').value = '';
+            document.getElementById('new-note-title').value = '';
             document.getElementById('new-note-date').valueAsDate = new Date();
             document.getElementById('new-note-text').value = '';
 
@@ -2031,7 +2113,7 @@
             let filtered = team.notes.filter(n => {
                 let matchesStart = !startDate || n.date >= startDate;
                 let matchesEnd = !endDate || n.date <= endDate;
-                let matchesText = !filterText || n.text.toLowerCase().includes(filterText);
+                let matchesText = !filterText || n.text.toLowerCase().includes(filterText) || (n.title && n.title.toLowerCase().includes(filterText));
 
                 return matchesStart && matchesEnd && matchesText;
             });
@@ -2054,6 +2136,7 @@
                             <button class="btn btn-danger" style="padding: 2px 8px; font-size:0.75rem;" onclick="deleteNote('${note.id}')">מחק</button>
                         </div>
                     </div>
+                    ${note.title ? `<h4 style="color:var(--primary); margin-top:6px;">${note.title}</h4>` : ''}
                     <p style="white-space: pre-wrap; font-size:0.95rem;">${note.text}</p>
                 `;
                 container.appendChild(card);
