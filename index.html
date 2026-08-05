@@ -744,14 +744,20 @@
             <h2>לוח אימונים חודשי</h2>
             <p id="calendar-team-name" style="text-align:center; color:var(--primary); font-weight:bold; margin-bottom:10px;"></p>
 
+            <div style="display:flex; gap:10px; margin-bottom:15px;">
+                <button class="court-type-btn" id="cal-view-day-btn" onclick="setCalendarViewMode('day')">יומי</button>
+                <button class="court-type-btn" id="cal-view-week-btn" onclick="setCalendarViewMode('week')">שבועי</button>
+                <button class="court-type-btn selected" id="cal-view-month-btn" onclick="setCalendarViewMode('month')">חודשי</button>
+            </div>
+
             <div class="calendar-header">
-                <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeMonth(-1)">❮ חודש קודם</button>
+                <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeMonth(-1)" id="cal-prev-btn">❮ חודש קודם</button>
                 <h3 id="cal-month-year">יולי 2026</h3>
-                <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeMonth(1)">חודש הבא ❯</button>
+                <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeMonth(1)" id="cal-next-btn">חודש הבא ❯</button>
             </div>
 
             <div class="card" style="padding: 10px;">
-                <div class="calendar-grid">
+                <div class="calendar-grid" id="calendar-day-names-row">
                     <div class="cal-day-name">א'</div>
                     <div class="cal-day-name">ב'</div>
                     <div class="cal-day-name">ג'</div>
@@ -760,8 +766,8 @@
                     <div class="cal-day-name">ו'</div>
                     <div class="cal-day-name">ש'</div>
                 </div>
-                <div class="calendar-grid" id="calendar-days-grid">
-                    <!-- ימי החודש ייטענו דינמית -->
+                <div id="calendar-days-grid">
+                    <!-- ימי החודש/שבוע/יום ייטענו דינמית -->
                 </div>
             </div>
 
@@ -789,6 +795,17 @@
                 <div class="form-group">
                     <label>כותרת / שם האימון או התרגיל:</label>
                     <input type="text" id="practice-title-input" placeholder="למשל: אימון בוקר / תרגיל התקפה">
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <div class="form-group" style="flex:1;">
+                        <label>שעת האימון:</label>
+                        <input type="time" id="practice-time-input">
+                    </div>
+                    <div class="form-group" style="flex:2;">
+                        <label>מיקום האימון:</label>
+                        <input type="text" id="practice-location-input" placeholder="למשל: אולם הספורט העירוני">
+                    </div>
                 </div>
 
                 <label>סוג מגרש:</label>
@@ -1208,11 +1225,7 @@
         // או לרשימת הקבוצות אם אין עדיין קבוצה נבחרת
         function goToMainMenu() {
             if (!currentUser) return;
-            if (appState.currentTeamId && getCurrentTeam()) {
-                showView('view-team-dashboard');
-            } else {
-                showView('view-teams-list');
-            }
+            showView('view-teams-list');
         }
 
         // --- 1. ניהול קבוצות ---
@@ -1372,23 +1385,51 @@
             renderCalendar();
         }
 
-        function changeMonth(delta) {
-            currentDate.setMonth(currentDate.getMonth() + delta);
+        let calendarViewMode = 'month'; // 'day' | 'week' | 'month'
+
+        const HEBREW_WEEKDAYS_FULL = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+
+        function setCalendarViewMode(mode) {
+            calendarViewMode = mode;
+            document.getElementById('cal-view-day-btn').classList.toggle('selected', mode === 'day');
+            document.getElementById('cal-view-week-btn').classList.toggle('selected', mode === 'week');
+            document.getElementById('cal-view-month-btn').classList.toggle('selected', mode === 'month');
             renderCalendar();
         }
 
+        function changeMonth(delta) {
+            if (calendarViewMode === 'month') {
+                currentDate.setMonth(currentDate.getMonth() + delta);
+            } else if (calendarViewMode === 'week') {
+                currentDate.setDate(currentDate.getDate() + delta * 7);
+            } else {
+                currentDate.setDate(currentDate.getDate() + delta);
+            }
+            renderCalendar();
+        }
+
+        function formatDateKey(d) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
+
+        function getWeekStart(date) {
+            const d = new Date(date);
+            d.setDate(d.getDate() - d.getDay());
+            d.setHours(0, 0, 0, 0);
+            return d;
+        }
+
+        function getPracticesForDate(team, dateKey) {
+            if (!team || !team.practices || !team.practices[dateKey]) return [];
+            let list = team.practices[dateKey];
+            if (!Array.isArray(list)) list = [list];
+            return list;
+        }
+
         function renderCalendar() {
-            const year = currentDate.getFullYear();
-            const month = currentDate.getMonth();
-
-            document.getElementById('cal-month-year').innerText = `${hebrewMonths[month]} ${year}`;
-
-            const grid = document.getElementById('calendar-days-grid');
-            grid.innerHTML = '';
-
-            const firstDayIndex = new Date(year, month, 1).getDay();
-            const totalDays = new Date(year, month + 1, 0).getDate();
-
             const currentTeam = getCurrentTeam();
             const teamColor = currentTeam ? getTeamColor(currentTeam) : '#22c55e';
 
@@ -1397,6 +1438,42 @@
                 teamNameEl.innerText = currentTeam ? `🏀 ${currentTeam.name}` : '';
                 teamNameEl.style.color = teamColor;
             }
+
+            const dayNamesRow = document.getElementById('calendar-day-names-row');
+            const prevBtn = document.getElementById('cal-prev-btn');
+            const nextBtn = document.getElementById('cal-next-btn');
+
+            if (calendarViewMode === 'month') {
+                if (dayNamesRow) dayNamesRow.style.display = 'grid';
+                if (prevBtn) prevBtn.innerText = '❮ חודש קודם';
+                if (nextBtn) nextBtn.innerText = 'חודש הבא ❯';
+                renderCalendarMonth(currentTeam, teamColor);
+            } else if (calendarViewMode === 'week') {
+                if (dayNamesRow) dayNamesRow.style.display = 'none';
+                if (prevBtn) prevBtn.innerText = '❮ שבוע קודם';
+                if (nextBtn) nextBtn.innerText = 'שבוע הבא ❯';
+                renderCalendarWeek(currentTeam, teamColor);
+            } else {
+                if (dayNamesRow) dayNamesRow.style.display = 'none';
+                if (prevBtn) prevBtn.innerText = '❮ יום קודם';
+                if (nextBtn) nextBtn.innerText = 'יום הבא ❯';
+                renderCalendarDay(currentTeam, teamColor);
+            }
+        }
+
+        function renderCalendarMonth(currentTeam, teamColor) {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+
+            document.getElementById('cal-month-year').innerText = `${hebrewMonths[month]} ${year}`;
+
+            const grid = document.getElementById('calendar-days-grid');
+            grid.style.cssText = '';
+            grid.className = 'calendar-grid';
+            grid.innerHTML = '';
+
+            const firstDayIndex = new Date(year, month, 1).getDay();
+            const totalDays = new Date(year, month + 1, 0).getDate();
 
             for (let i = 0; i < firstDayIndex; i++) {
                 const emptyCell = document.createElement('div');
@@ -1409,16 +1486,9 @@
                 const monthStr = String(month + 1).padStart(2, '0');
                 const dateKey = `${year}-${monthStr}-${dayStr}`;
 
-                let practicesList = [];
-                if (currentTeam && currentTeam.practices && currentTeam.practices[dateKey]) {
-                    if (Array.isArray(currentTeam.practices[dateKey])) {
-                        practicesList = currentTeam.practices[dateKey];
-                    } else {
-                        practicesList = [currentTeam.practices[dateKey]];
-                    }
-                }
-
+                const practicesList = getPracticesForDate(currentTeam, dateKey);
                 const count = practicesList.length;
+                const timesText = practicesList.filter(p => p.time).map(p => p.time).join(', ');
 
                 const cell = document.createElement('div');
                 cell.className = `cal-day-cell ${count > 0 ? 'has-practice' : ''}`;
@@ -1429,11 +1499,100 @@
                 cell.innerHTML = `
                     <span><strong>${day}</strong></span>
                     ${count > 0 ? `<span class="practice-badge" style="background:${teamColor};">${count} אימונים</span>` : ''}
+                    ${timesText ? `<span style="font-size:0.65rem; color:var(--text-muted); display:block;">${timesText}</span>` : ''}
                 `;
 
                 cell.onclick = () => openDayPractices(dateKey);
                 grid.appendChild(cell);
             }
+        }
+
+        function renderCalendarWeek(currentTeam, teamColor) {
+            const weekStart = getWeekStart(currentDate);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+
+            document.getElementById('cal-month-year').innerText =
+                `${weekStart.getDate()}/${weekStart.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}/${weekEnd.getFullYear()}`;
+
+            const grid = document.getElementById('calendar-days-grid');
+            grid.className = '';
+            grid.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
+            grid.innerHTML = '';
+
+            const todayKey = formatDateKey(new Date());
+
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(weekStart);
+                d.setDate(d.getDate() + i);
+                const dateKey = formatDateKey(d);
+                const practicesList = getPracticesForDate(currentTeam, dateKey);
+                const isToday = dateKey === todayKey;
+
+                const dayCard = document.createElement('div');
+                dayCard.className = 'card';
+                dayCard.style.padding = '10px';
+                dayCard.style.cursor = 'pointer';
+                if (practicesList.length > 0) dayCard.style.borderColor = teamColor;
+
+                dayCard.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong style="color:${isToday ? teamColor : 'inherit'};">יום ${HEBREW_WEEKDAYS_FULL[i]}, ${d.getDate()}/${d.getMonth() + 1}</strong>
+                        ${practicesList.length > 0 ? `<span class="practice-badge" style="background:${teamColor};">${practicesList.length} אימונים</span>` : ''}
+                    </div>
+                    ${practicesList.map(p => `
+                        <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border-color);">
+                            <strong>${p.title || 'אימון'}</strong>
+                            ${(p.time || p.location) ? `<p style="font-size:0.85rem; color:var(--info);">${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
+                        </div>
+                    `).join('')}
+                `;
+
+                dayCard.onclick = () => openDayPractices(dateKey);
+                grid.appendChild(dayCard);
+            }
+        }
+
+        function renderCalendarDay(currentTeam, teamColor) {
+            const dateKey = formatDateKey(currentDate);
+            const weekdayIndex = currentDate.getDay();
+
+            document.getElementById('cal-month-year').innerText =
+                `יום ${HEBREW_WEEKDAYS_FULL[weekdayIndex]}, ${currentDate.getDate()} ב${hebrewMonths[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+
+            const practicesList = getPracticesForDate(currentTeam, dateKey);
+
+            const grid = document.getElementById('calendar-days-grid');
+            grid.className = '';
+            grid.style.cssText = 'display:block;';
+            grid.innerHTML = '';
+
+            if (practicesList.length === 0) {
+                grid.innerHTML = `<div class="card"><p style="color:var(--text-muted);">אין אימונים ביום זה. לחץ למטה כדי להוסיף.</p></div>`;
+            } else {
+                practicesList.forEach(p => {
+                    const item = document.createElement('div');
+                    item.className = 'practice-item-card';
+                    item.style.cursor = 'pointer';
+                    item.innerHTML = `
+                        <div>
+                            <h3 style="color:${teamColor};">${p.title || 'אימון'}</h3>
+                            ${(p.time || p.location) ? `<p style="font-size:0.9rem; color:var(--info); font-weight:bold;">${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
+                            <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${p.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
+                        </div>
+                    `;
+                    item.onclick = () => openDayPractices(dateKey);
+                    grid.appendChild(item);
+                });
+            }
+
+            const addBtn = document.createElement('button');
+            addBtn.className = 'btn';
+            addBtn.style.width = '100%';
+            addBtn.style.marginTop = '10px';
+            addBtn.innerText = '➕ הוסף אימון/תרגיל ליום זה';
+            addBtn.onclick = () => openDayPractices(dateKey);
+            grid.appendChild(addBtn);
         }
 
         // --- לוח שנה כללי (כל הקבוצות, לפי צבע קבוצה) ---
@@ -1519,11 +1678,21 @@
             const existingHtml = teamsWithPractice.length > 0
                 ? `
                     <h4 style="margin-bottom:8px;">אימונים בתאריך ${dateKey}:</h4>
-                    ${teamsWithPractice.map(t => `
-                        <div class="note-card" style="cursor:pointer; border-right: 4px solid ${getTeamColor(t)};" onclick="jumpToTeamDay('${t.id}', '${dateKey}')">
-                            <strong>${t.name}</strong> <span style="color:var(--text-muted); font-size:0.85rem;">(מאמן: ${t.coach})</span>
-                        </div>
-                    `).join('')}
+                    ${teamsWithPractice.map(t => {
+                        let practicesList = t.practices && t.practices[dateKey];
+                        if (!practicesList) practicesList = [];
+                        if (!Array.isArray(practicesList)) practicesList = [practicesList];
+                        const timesLocations = practicesList
+                            .filter(p => p.time || p.location)
+                            .map(p => `${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
+                            .join('<br>');
+                        return `
+                            <div class="note-card" style="cursor:pointer; border-right: 4px solid ${getTeamColor(t)};" onclick="jumpToTeamDay('${t.id}', '${dateKey}')">
+                                <strong>${t.name}</strong> <span style="color:var(--text-muted); font-size:0.85rem;">(מאמן: ${t.coach})</span>
+                                ${timesLocations ? `<p style="font-size:0.85rem; color:var(--info); margin-top:4px;">${timesLocations}</p>` : ''}
+                            </div>
+                        `;
+                    }).join('')}
                 `
                 : `<p style="color:var(--text-muted); font-size:0.9rem;">אין אימונים בתאריך ${dateKey}.</p>`;
 
@@ -1591,6 +1760,7 @@
                     <div class="practice-item-header">
                         <div>
                             <h3 style="color:var(--primary);">${practice.title || 'תרגיל ' + (index + 1)}</h3>
+                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + practice.time : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
                             <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${practice.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
                             <p style="font-size:0.85rem; margin-top:4px;">${practice.notes ? practice.notes.substring(0, 50) + '...' : 'ללא הערות'}</p>
                         </div>
@@ -1619,6 +1789,8 @@
                 id: newId,
                 title: `תרגיל / אימון ${count}`,
                 type: 'half',
+                time: '',
+                location: '',
                 notes: '',
                 canvasImg: null
             };
@@ -1657,6 +1829,8 @@
                 id: 'prc_' + Date.now(),
                 title: newTitle,
                 type: practiceToCopy.type,
+                time: practiceToCopy.time || '',
+                location: practiceToCopy.location || '',
                 notes: practiceToCopy.notes || '',
                 canvasImg: practiceToCopy.canvasImg || null
             };
@@ -1682,6 +1856,8 @@
 
             document.getElementById('practice-edit-title').innerText = `עריכת תרגיל לתאריך ${selectedPracticeDateStr}`;
             document.getElementById('practice-title-input').value = practice.title || '';
+            document.getElementById('practice-time-input').value = practice.time || '';
+            document.getElementById('practice-location-input').value = practice.location || '';
             setCourtType(practice.type || 'half');
             document.getElementById('practice-notes-input').value = practice.notes || '';
 
@@ -1706,6 +1882,8 @@
             if (practice) {
                 practice.title = document.getElementById('practice-title-input').value.trim() || 'אימון';
                 practice.type = currentCourtType;
+                practice.time = document.getElementById('practice-time-input').value;
+                practice.location = document.getElementById('practice-location-input').value.trim();
                 practice.notes = document.getElementById('practice-notes-input').value;
                 if (canvas) {
                     practice.canvasImg = canvas.toDataURL();
