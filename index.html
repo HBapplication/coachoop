@@ -742,7 +742,8 @@
         <!-- ========================================== -->
         <div id="view-calendar" class="view">
             <h2>לוח אימונים חודשי</h2>
-            
+            <p id="calendar-team-name" style="text-align:center; color:var(--primary); font-weight:bold; margin-bottom:10px;"></p>
+
             <div class="calendar-header">
                 <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeMonth(-1)">❮ חודש קודם</button>
                 <h3 id="cal-month-year">יולי 2026</h3>
@@ -1389,6 +1390,13 @@
             const totalDays = new Date(year, month + 1, 0).getDate();
 
             const currentTeam = getCurrentTeam();
+            const teamColor = currentTeam ? getTeamColor(currentTeam) : '#22c55e';
+
+            const teamNameEl = document.getElementById('calendar-team-name');
+            if (teamNameEl) {
+                teamNameEl.innerText = currentTeam ? `🏀 ${currentTeam.name}` : '';
+                teamNameEl.style.color = teamColor;
+            }
 
             for (let i = 0; i < firstDayIndex; i++) {
                 const emptyCell = document.createElement('div');
@@ -1414,9 +1422,13 @@
 
                 const cell = document.createElement('div');
                 cell.className = `cal-day-cell ${count > 0 ? 'has-practice' : ''}`;
+                if (count > 0) {
+                    cell.style.borderColor = teamColor;
+                    cell.style.backgroundColor = teamColor + '33';
+                }
                 cell.innerHTML = `
                     <span><strong>${day}</strong></span>
-                    ${count > 0 ? `<span class="practice-badge">${count} אימונים</span>` : ''}
+                    ${count > 0 ? `<span class="practice-badge" style="background:${teamColor};">${count} אימונים</span>` : ''}
                 `;
 
                 cell.onclick = () => openDayPractices(dateKey);
@@ -1504,18 +1516,30 @@
             const container = document.getElementById('global-cal-day-details');
             if (!container) return;
 
-            if (teamsWithPractice.length === 0) {
-                container.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem;">אין אימונים בתאריך ${dateKey}.</p>`;
-                return;
-            }
+            const existingHtml = teamsWithPractice.length > 0
+                ? `
+                    <h4 style="margin-bottom:8px;">אימונים בתאריך ${dateKey}:</h4>
+                    ${teamsWithPractice.map(t => `
+                        <div class="note-card" style="cursor:pointer; border-right: 4px solid ${getTeamColor(t)};" onclick="jumpToTeamDay('${t.id}', '${dateKey}')">
+                            <strong>${t.name}</strong> <span style="color:var(--text-muted); font-size:0.85rem;">(מאמן: ${t.coach})</span>
+                        </div>
+                    `).join('')}
+                `
+                : `<p style="color:var(--text-muted); font-size:0.9rem;">אין אימונים בתאריך ${dateKey}.</p>`;
+
+            const teamOptions = appState.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
 
             container.innerHTML = `
-                <h4 style="margin-bottom:8px;">אימונים בתאריך ${dateKey}:</h4>
-                ${teamsWithPractice.map(t => `
-                    <div class="note-card" style="cursor:pointer; border-right: 4px solid ${getTeamColor(t)};" onclick="jumpToTeamDay('${t.id}', '${dateKey}')">
-                        <strong>${t.name}</strong> <span style="color:var(--text-muted); font-size:0.85rem;">(מאמן: ${t.coach})</span>
+                ${existingHtml}
+                ${appState.teams.length > 0 ? `
+                    <div class="card" style="margin-top:10px;">
+                        <label style="font-size:0.85rem; color:var(--text-muted);">➕ הוסף תרגיל בתאריך זה לקבוצה:</label>
+                        <div style="display:flex; gap:8px; margin-top:8px;">
+                            <select id="global-cal-team-select" style="flex:1;">${teamOptions}</select>
+                            <button class="btn" style="padding:8px 14px;" onclick="jumpToTeamDay(document.getElementById('global-cal-team-select').value, '${dateKey}')">הוסף</button>
+                        </div>
                     </div>
-                `).join('')}
+                ` : ''}
             `;
         }
 
