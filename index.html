@@ -288,6 +288,20 @@
             font-weight: bold;
         }
 
+        .team-color-dot {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            flex-shrink: 0;
+            background: none;
+        }
+        .team-color-dot::-webkit-color-swatch-wrapper { padding: 0; border-radius: 50%; }
+        .team-color-dot::-webkit-color-swatch { border: 2px solid var(--border-color); border-radius: 50%; }
+        .team-color-dot::-moz-color-swatch { border: 2px solid var(--border-color); border-radius: 50%; }
+
         /* לוח שנה חודשי */
         .calendar-header {
             display: flex;
@@ -661,6 +675,28 @@
                 <button class="btn btn-secondary" style="width:100%; margin-top:8px;" onclick="copyInviteLink()">📋 העתק קישור בלבד</button>
             </div>
 
+            <div class="card" style="padding: 10px; margin-bottom: 15px;">
+                <div class="calendar-header">
+                    <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeGlobalMonth(-1)">❮ חודש קודם</button>
+                    <h3 id="global-cal-month-year">יולי 2026</h3>
+                    <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeGlobalMonth(1)">חודש הבא ❯</button>
+                </div>
+                <div class="calendar-grid">
+                    <div class="cal-day-name">א'</div>
+                    <div class="cal-day-name">ב'</div>
+                    <div class="cal-day-name">ג'</div>
+                    <div class="cal-day-name">ד'</div>
+                    <div class="cal-day-name">ה'</div>
+                    <div class="cal-day-name">ו'</div>
+                    <div class="cal-day-name">ש'</div>
+                </div>
+                <div class="calendar-grid" id="global-calendar-days-grid">
+                    <!-- ימי החודש ייטענו דינמית -->
+                </div>
+                <div id="global-cal-legend" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:14px;"></div>
+                <div id="global-cal-day-details" style="margin-top:14px;"></div>
+            </div>
+
             <div id="teams-container" style="display: flex; flex-direction: column; gap: 10px;">
                 <!-- קבוצות ייטענו דינמית -->
             </div>
@@ -675,6 +711,10 @@
                 <div class="form-group">
                     <label>שם המאמן:</label>
                     <input type="text" id="new-coach-name" placeholder="הכנס שם מאמן">
+                </div>
+                <div class="form-group">
+                    <label>צבע הקבוצה (יוצג בלוח השנה הראשי):</label>
+                    <input type="color" id="new-team-color" class="team-color-dot" value="#f97316">
                 </div>
                 <button class="btn" style="width: 100%; margin-top: 8px;" onclick="createNewTeam()">צור קבוצה חדשה</button>
             </div>
@@ -973,6 +1013,7 @@
         let unsubscribeTeamsListener = null;
 
         let currentDate = new Date();
+        let globalCalDate = new Date();
         let selectedPracticeDateStr = null; // YYYY-MM-DD
         let selectedPracticeId = null;     // ID של האימון הנבחר
         let currentCourtType = 'half';
@@ -1118,6 +1159,7 @@
             unsubscribeTeamsListener = query.onSnapshot((snapshot) => {
                 appState.teams = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 renderTeamsList();
+                renderGlobalCalendar();
 
                 // אם קבוצה פתוחה כרגע, נעדכן אותה אם השתנתה מבחוץ
                 if (appState.currentTeamId) {
@@ -1158,7 +1200,7 @@
 
             if (viewId === 'view-players-list') renderPlayersList();
             if (viewId === 'view-notes-main') renderNotesList();
-            if (viewId === 'view-teams-list') renderTeamsList();
+            if (viewId === 'view-teams-list') { renderTeamsList(); renderGlobalCalendar(); }
         }
 
         // לחיצה על הלוגו בכותרת - חזרה לתפריט הראשי (3 הכפתורים) של הקבוצה הנבחרת,
@@ -1176,6 +1218,7 @@
         async function createNewTeam() {
             const name = document.getElementById('new-team-name').value.trim();
             const coach = document.getElementById('new-coach-name').value.trim();
+            const color = document.getElementById('new-team-color').value || '#f97316';
 
             if (!name || !coach) {
                 alert('נא למלא שם קבוצה ושם מאמן');
@@ -1189,6 +1232,7 @@
                 ownerEmail: currentUser.email,
                 name: name,
                 coach: coach,
+                color: color,
                 players: [],
                 practices: {},
                 notes: []
@@ -1237,6 +1281,28 @@
             });
         }
 
+        const TEAM_COLOR_PALETTE = ['#f97316', '#3b82f6', '#22c55e', '#ec4899', '#a855f7', '#eab308', '#06b6d4', '#ef4444'];
+
+        function getTeamColor(team) {
+            if (team.color) return team.color;
+            let hash = 0;
+            for (let i = 0; i < team.id.length; i++) hash = (hash * 31 + team.id.charCodeAt(i)) >>> 0;
+            return TEAM_COLOR_PALETTE[hash % TEAM_COLOR_PALETTE.length];
+        }
+
+        async function updateTeamColor(teamId, color) {
+            const team = appState.teams.find(t => t.id === teamId);
+            if (!team) return;
+            team.color = color;
+            try {
+                await db.collection('teams').doc(teamId).set({ color: color }, { merge: true });
+            } catch (e) {
+                console.error('שגיאה בעדכון צבע קבוצה:', e);
+            }
+            renderTeamsList();
+            renderGlobalCalendar();
+        }
+
         function renderTeamsList() {
             const container = document.getElementById('teams-container');
             container.innerHTML = '';
@@ -1251,10 +1317,15 @@
                 const card = document.createElement('div');
                 card.className = 'team-card';
                 card.innerHTML = `
-                    <div class="team-info">
-                        <h3>${team.name} (${(team.players || []).length})</h3>
-                        <p>מאמן: ${team.coach}</p>
-                        ${!isMine ? `<p class="team-owner-tag">👤 שייכת ל: ${team.ownerEmail || 'לא ידוע'}</p>` : ''}
+                    <div class="team-info" style="display:flex; align-items:center; gap:10px;">
+                        <input type="color" class="team-color-dot" value="${getTeamColor(team)}" title="שנה צבע קבוצה"
+                            onclick="event.stopPropagation()"
+                            onchange="event.stopPropagation(); updateTeamColor('${team.id}', this.value)">
+                        <div>
+                            <h3>${team.name} (${(team.players || []).length})</h3>
+                            <p>מאמן: ${team.coach}</p>
+                            ${!isMine ? `<p class="team-owner-tag">👤 שייכת ל: ${team.ownerEmail || 'לא ידוע'}</p>` : ''}
+                        </div>
                     </div>
                     <button class="btn btn-secondary" onclick="event.stopPropagation(); deleteTeam('${team.id}')">מחק</button>
                 `;
@@ -1351,6 +1422,116 @@
                 cell.onclick = () => openDayPractices(dateKey);
                 grid.appendChild(cell);
             }
+        }
+
+        // --- לוח שנה כללי (כל הקבוצות, לפי צבע קבוצה) ---
+        function changeGlobalMonth(delta) {
+            globalCalDate.setMonth(globalCalDate.getMonth() + delta);
+            renderGlobalCalendar();
+        }
+
+        function renderGlobalCalendar() {
+            const titleEl = document.getElementById('global-cal-month-year');
+            const grid = document.getElementById('global-calendar-days-grid');
+            if (!titleEl || !grid) return;
+
+            const year = globalCalDate.getFullYear();
+            const month = globalCalDate.getMonth();
+
+            titleEl.innerText = `${hebrewMonths[month]} ${year}`;
+            grid.innerHTML = '';
+
+            const firstDayIndex = new Date(year, month, 1).getDay();
+            const totalDays = new Date(year, month + 1, 0).getDate();
+
+            for (let i = 0; i < firstDayIndex; i++) {
+                const emptyCell = document.createElement('div');
+                emptyCell.className = 'cal-day-cell empty';
+                grid.appendChild(emptyCell);
+            }
+
+            for (let day = 1; day <= totalDays; day++) {
+                const dayStr = String(day).padStart(2, '0');
+                const monthStr = String(month + 1).padStart(2, '0');
+                const dateKey = `${year}-${monthStr}-${dayStr}`;
+
+                const teamsWithPractice = appState.teams.filter(t => {
+                    const p = t.practices && t.practices[dateKey];
+                    if (!p) return false;
+                    return Array.isArray(p) ? p.length > 0 : true;
+                });
+
+                const cell = document.createElement('div');
+                cell.className = `cal-day-cell ${teamsWithPractice.length > 0 ? 'has-practice' : ''}`;
+
+                const dots = teamsWithPractice.map(t =>
+                    `<span title="${t.name}" style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${getTeamColor(t)}; margin:1px;"></span>`
+                ).join('');
+
+                cell.innerHTML = `
+                    <span><strong>${day}</strong></span>
+                    <div style="display:flex; flex-wrap:wrap; justify-content:center; max-width:100%;">${dots}</div>
+                `;
+
+                cell.onclick = () => showGlobalDayDetails(dateKey, teamsWithPractice);
+                grid.appendChild(cell);
+            }
+
+            renderGlobalCalLegend();
+
+            const detailsEl = document.getElementById('global-cal-day-details');
+            if (detailsEl) detailsEl.innerHTML = '';
+        }
+
+        function renderGlobalCalLegend() {
+            const legend = document.getElementById('global-cal-legend');
+            if (!legend) return;
+
+            if (appState.teams.length === 0) {
+                legend.innerHTML = '';
+                return;
+            }
+
+            legend.innerHTML = appState.teams.map(t => `
+                <div style="display:flex; align-items:center; gap:6px; font-size:0.8rem; color:var(--text-muted);">
+                    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${getTeamColor(t)};"></span>
+                    ${t.name}
+                </div>
+            `).join('');
+        }
+
+        function showGlobalDayDetails(dateKey, teamsWithPractice) {
+            const container = document.getElementById('global-cal-day-details');
+            if (!container) return;
+
+            if (teamsWithPractice.length === 0) {
+                container.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem;">אין אימונים בתאריך ${dateKey}.</p>`;
+                return;
+            }
+
+            container.innerHTML = `
+                <h4 style="margin-bottom:8px;">אימונים בתאריך ${dateKey}:</h4>
+                ${teamsWithPractice.map(t => `
+                    <div class="note-card" style="cursor:pointer; border-right: 4px solid ${getTeamColor(t)};" onclick="jumpToTeamDay('${t.id}', '${dateKey}')">
+                        <strong>${t.name}</strong> <span style="color:var(--text-muted); font-size:0.85rem;">(מאמן: ${t.coach})</span>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        function jumpToTeamDay(teamId, dateKey) {
+            appState.currentTeamId = teamId;
+            const team = getCurrentTeam();
+            if (!team) return;
+
+            document.getElementById('active-team-name').innerText = team.name;
+            document.getElementById('active-team-name').style.display = 'inline-block';
+            document.getElementById('dash-team-title').innerText = team.name;
+            document.getElementById('dash-coach-title').innerText = 'מאמן: ' + team.coach;
+
+            showView('view-calendar');
+            renderCalendar();
+            openDayPractices(dateKey);
         }
 
         // פתיחת רשימת אימוני היום
