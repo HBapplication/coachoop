@@ -676,12 +676,17 @@
             </div>
 
             <div class="card" style="padding: 10px; margin-bottom: 15px;">
-                <div class="calendar-header">
-                    <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeGlobalMonth(-1)">❮ חודש קודם</button>
-                    <h3 id="global-cal-month-year">יולי 2026</h3>
-                    <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeGlobalMonth(1)">חודש הבא ❯</button>
+                <div style="display:flex; gap:10px; margin-bottom:12px;">
+                    <button class="court-type-btn" id="global-cal-view-day-btn" onclick="setGlobalCalendarViewMode('day')">יומי</button>
+                    <button class="court-type-btn" id="global-cal-view-week-btn" onclick="setGlobalCalendarViewMode('week')">שבועי</button>
+                    <button class="court-type-btn selected" id="global-cal-view-month-btn" onclick="setGlobalCalendarViewMode('month')">חודשי</button>
                 </div>
-                <div class="calendar-grid">
+                <div class="calendar-header">
+                    <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeGlobalMonth(-1)" id="global-cal-prev-btn">❮ חודש קודם</button>
+                    <h3 id="global-cal-month-year">יולי 2026</h3>
+                    <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeGlobalMonth(1)" id="global-cal-next-btn">חודש הבא ❯</button>
+                </div>
+                <div class="calendar-grid" id="global-calendar-day-names-row">
                     <div class="cal-day-name">א'</div>
                     <div class="cal-day-name">ב'</div>
                     <div class="cal-day-name">ג'</div>
@@ -690,8 +695,8 @@
                     <div class="cal-day-name">ו'</div>
                     <div class="cal-day-name">ש'</div>
                 </div>
-                <div class="calendar-grid" id="global-calendar-days-grid">
-                    <!-- ימי החודש ייטענו דינמית -->
+                <div id="global-calendar-days-grid">
+                    <!-- ימי החודש/שבוע/יום ייטענו דינמית -->
                 </div>
                 <div id="global-cal-legend" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:14px;"></div>
                 <div id="global-cal-day-details" style="margin-top:14px;"></div>
@@ -1596,9 +1601,33 @@
         }
 
         // --- לוח שנה כללי (כל הקבוצות, לפי צבע קבוצה) ---
-        function changeGlobalMonth(delta) {
-            globalCalDate.setMonth(globalCalDate.getMonth() + delta);
+        let globalCalViewMode = 'month'; // 'day' | 'week' | 'month'
+
+        function setGlobalCalendarViewMode(mode) {
+            globalCalViewMode = mode;
+            document.getElementById('global-cal-view-day-btn').classList.toggle('selected', mode === 'day');
+            document.getElementById('global-cal-view-week-btn').classList.toggle('selected', mode === 'week');
+            document.getElementById('global-cal-view-month-btn').classList.toggle('selected', mode === 'month');
             renderGlobalCalendar();
+        }
+
+        function changeGlobalMonth(delta) {
+            if (globalCalViewMode === 'month') {
+                globalCalDate.setMonth(globalCalDate.getMonth() + delta);
+            } else if (globalCalViewMode === 'week') {
+                globalCalDate.setDate(globalCalDate.getDate() + delta * 7);
+            } else {
+                globalCalDate.setDate(globalCalDate.getDate() + delta);
+            }
+            renderGlobalCalendar();
+        }
+
+        function getTeamsWithPracticeOn(dateKey) {
+            return appState.teams.filter(t => {
+                const p = t.practices && t.practices[dateKey];
+                if (!p) return false;
+                return Array.isArray(p) ? p.length > 0 : true;
+            });
         }
 
         function renderGlobalCalendar() {
@@ -1606,10 +1635,40 @@
             const grid = document.getElementById('global-calendar-days-grid');
             if (!titleEl || !grid) return;
 
+            const dayNamesRow = document.getElementById('global-calendar-day-names-row');
+            const prevBtn = document.getElementById('global-cal-prev-btn');
+            const nextBtn = document.getElementById('global-cal-next-btn');
+
+            if (globalCalViewMode === 'month') {
+                if (dayNamesRow) dayNamesRow.style.display = 'grid';
+                if (prevBtn) prevBtn.innerText = '❮ חודש קודם';
+                if (nextBtn) nextBtn.innerText = 'חודש הבא ❯';
+                renderGlobalCalendarMonth();
+            } else if (globalCalViewMode === 'week') {
+                if (dayNamesRow) dayNamesRow.style.display = 'none';
+                if (prevBtn) prevBtn.innerText = '❮ שבוע קודם';
+                if (nextBtn) nextBtn.innerText = 'שבוע הבא ❯';
+                renderGlobalCalendarWeek();
+            } else {
+                if (dayNamesRow) dayNamesRow.style.display = 'none';
+                if (prevBtn) prevBtn.innerText = '❮ יום קודם';
+                if (nextBtn) nextBtn.innerText = 'יום הבא ❯';
+                renderGlobalCalendarDay();
+            }
+
+            renderGlobalCalLegend();
+        }
+
+        function renderGlobalCalendarMonth() {
+            const titleEl = document.getElementById('global-cal-month-year');
+            const grid = document.getElementById('global-calendar-days-grid');
+
             const year = globalCalDate.getFullYear();
             const month = globalCalDate.getMonth();
 
             titleEl.innerText = `${hebrewMonths[month]} ${year}`;
+            grid.style.cssText = '';
+            grid.className = 'calendar-grid';
             grid.innerHTML = '';
 
             const firstDayIndex = new Date(year, month, 1).getDay();
@@ -1626,11 +1685,7 @@
                 const monthStr = String(month + 1).padStart(2, '0');
                 const dateKey = `${year}-${monthStr}-${dayStr}`;
 
-                const teamsWithPractice = appState.teams.filter(t => {
-                    const p = t.practices && t.practices[dateKey];
-                    if (!p) return false;
-                    return Array.isArray(p) ? p.length > 0 : true;
-                });
+                const teamsWithPractice = getTeamsWithPracticeOn(dateKey);
 
                 const cell = document.createElement('div');
                 cell.className = `cal-day-cell ${teamsWithPractice.length > 0 ? 'has-practice' : ''}`;
@@ -1648,10 +1703,86 @@
                 grid.appendChild(cell);
             }
 
-            renderGlobalCalLegend();
+            const detailsEl = document.getElementById('global-cal-day-details');
+            if (detailsEl) detailsEl.innerHTML = '';
+        }
+
+        function renderGlobalCalendarWeek() {
+            const titleEl = document.getElementById('global-cal-month-year');
+            const grid = document.getElementById('global-calendar-days-grid');
+
+            const weekStart = getWeekStart(globalCalDate);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+
+            titleEl.innerText =
+                `${weekStart.getDate()}/${weekStart.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}/${weekEnd.getFullYear()}`;
+
+            grid.className = '';
+            grid.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
+            grid.innerHTML = '';
+
+            const todayKey = formatDateKey(new Date());
+
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(weekStart);
+                d.setDate(d.getDate() + i);
+                const dateKey = formatDateKey(d);
+                const teamsWithPractice = getTeamsWithPracticeOn(dateKey);
+                const isToday = dateKey === todayKey;
+
+                const dayCard = document.createElement('div');
+                dayCard.className = 'card';
+                dayCard.style.padding = '10px';
+                dayCard.style.cursor = 'pointer';
+
+                const teamRows = teamsWithPractice.map(t => {
+                    let practicesList = t.practices[dateKey];
+                    if (!Array.isArray(practicesList)) practicesList = [practicesList];
+                    const timesLocations = practicesList
+                        .filter(p => p.time || p.location)
+                        .map(p => `${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
+                        .join('<br>');
+                    return `
+                        <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border-color); border-right:4px solid ${getTeamColor(t)}; padding-right:8px;">
+                            <strong>${t.name}</strong>
+                            ${timesLocations ? `<p style="font-size:0.85rem; color:var(--info);">${timesLocations}</p>` : ''}
+                        </div>
+                    `;
+                }).join('');
+
+                dayCard.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong style="color:${isToday ? 'var(--primary)' : 'inherit'};">יום ${HEBREW_WEEKDAYS_FULL[i]}, ${d.getDate()}/${d.getMonth() + 1}</strong>
+                        ${teamsWithPractice.length > 0 ? `<span class="practice-badge">${teamsWithPractice.length} קבוצות</span>` : ''}
+                    </div>
+                    ${teamRows}
+                `;
+
+                dayCard.onclick = () => showGlobalDayDetails(dateKey, teamsWithPractice);
+                grid.appendChild(dayCard);
+            }
 
             const detailsEl = document.getElementById('global-cal-day-details');
             if (detailsEl) detailsEl.innerHTML = '';
+        }
+
+        function renderGlobalCalendarDay() {
+            const titleEl = document.getElementById('global-cal-month-year');
+            const grid = document.getElementById('global-calendar-days-grid');
+
+            const dateKey = formatDateKey(globalCalDate);
+            const weekdayIndex = globalCalDate.getDay();
+
+            titleEl.innerText =
+                `יום ${HEBREW_WEEKDAYS_FULL[weekdayIndex]}, ${globalCalDate.getDate()} ב${hebrewMonths[globalCalDate.getMonth()]} ${globalCalDate.getFullYear()}`;
+
+            grid.className = '';
+            grid.style.cssText = 'display:none;';
+            grid.innerHTML = '';
+
+            const teamsWithPractice = getTeamsWithPracticeOn(dateKey);
+            showGlobalDayDetails(dateKey, teamsWithPractice);
         }
 
         function renderGlobalCalLegend() {
