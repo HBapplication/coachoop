@@ -1970,12 +1970,29 @@
             const weekEnd = days[6].date;
             const rangeText = `${weekStart.getDate()}/${weekStart.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}/${weekEnd.getFullYear()}`;
 
-            // --- ציור התמונה ---
+            // --- חישוב גובה דינמי לכל יום (בהתאם לכמות האימונים בו) ---
             const width = 800;
-            const rowHeight = 80;
             const headerHeight = 190;
             const footerHeight = 50;
-            const height = headerHeight + (rowHeight * 7) + footerHeight;
+            const dayHeaderH = 34;
+            const practiceBlockH = 46;
+            const minRowContentH = 30;
+            const rowPadding = 16;
+
+            days.forEach(day => {
+                let contentH;
+                if (day.holiday) {
+                    contentH = minRowContentH;
+                } else if (day.practices.length > 0) {
+                    contentH = day.practices.length * practiceBlockH;
+                } else {
+                    contentH = minRowContentH;
+                }
+                day.rowHeight = dayHeaderH + contentH + rowPadding;
+            });
+
+            const totalRowsHeight = days.reduce((sum, d) => sum + d.rowHeight, 0);
+            const height = headerHeight + totalRowsHeight + footerHeight;
 
             const canvas = document.createElement('canvas');
             canvas.width = width;
@@ -2017,47 +2034,50 @@
             ctx.stroke();
 
             // שורות הימים
+            let y = headerHeight;
             days.forEach((day, index) => {
-                const y = headerHeight + (index * rowHeight);
+                const rowH = day.rowHeight;
                 const isEven = index % 2 === 0;
 
                 ctx.fillStyle = isEven ? '#1e293b' : '#0f172a';
-                ctx.fillRect(30, y, width - 60, rowHeight - 8);
+                ctx.fillRect(30, y, width - 60, rowH - 8);
 
-                const centerY = y + (rowHeight - 8) / 2;
-
-                // שם היום + תאריך (בצד ימין - RTL)
+                // שם היום + תאריך (למעלה בצד ימין - RTL)
                 ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 24px Arial';
+                ctx.font = 'bold 22px Arial';
                 ctx.textAlign = 'right';
-                ctx.fillText(`יום ${day.weekdayName}`, width - 55, centerY - 8);
+                ctx.fillText(`יום ${day.weekdayName}`, width - 55, y + 26);
 
                 ctx.fillStyle = '#94a3b8';
-                ctx.font = '17px Arial';
-                ctx.fillText(`${day.date.getDate()}/${day.date.getMonth() + 1}`, width - 55, centerY + 20);
+                ctx.font = '15px Arial';
+                ctx.fillText(`${day.date.getDate()}/${day.date.getMonth() + 1}`, width - 55, y + 46);
 
-                // פרטי אימון / חג / אין אימון (בצד שמאל)
+                // פרטי אימונים (בצד שמאל)
                 ctx.textAlign = 'left';
                 if (day.holiday) {
                     ctx.fillStyle = '#facc15';
                     ctx.font = 'bold 20px Arial';
-                    ctx.fillText(`🎌 ${day.holiday.name} - אין אימון`, 55, centerY + 6);
+                    ctx.fillText(`🎌 ${day.holiday.name} - אין אימון`, 55, y + 40);
                 } else if (day.practices.length > 0) {
-                    const p = day.practices[0];
-                    ctx.fillStyle = teamColor;
-                    ctx.font = 'bold 22px Arial';
-                    ctx.fillText(formatTimeRange(p), 55, centerY - 8);
+                    day.practices.forEach((p, pIndex) => {
+                        const blockY = dayHeaderH + (pIndex * practiceBlockH);
 
-                    ctx.fillStyle = '#cbd5e1';
-                    ctx.font = '17px Arial';
-                    let details = p.location || p.title || '';
-                    if (day.practices.length > 1) details += ` (+${day.practices.length - 1} נוספים)`;
-                    ctx.fillText(details, 55, centerY + 18);
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 21px Arial';
+                        ctx.fillText(p.title || 'אימון', 55, y + blockY + 4);
+
+                        ctx.fillStyle = teamColor;
+                        ctx.font = 'bold 17px Arial';
+                        const timeLoc = `${formatTimeRange(p)}${p.location ? '  •  ' + p.location : ''}`;
+                        ctx.fillText(timeLoc, 55, y + blockY + 27);
+                    });
                 } else {
                     ctx.fillStyle = '#475569';
                     ctx.font = '18px Arial';
-                    ctx.fillText('אין אימון', 55, centerY + 6);
+                    ctx.fillText('אין אימון', 55, y + 40);
                 }
+
+                y += rowH;
             });
 
             // פוטר
