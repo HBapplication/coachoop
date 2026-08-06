@@ -739,6 +739,85 @@
                 <button class="btn-main" onclick="openCalendarView()">📅 לוח אימונים חודשי</button>
                 <button class="btn-main" onclick="showView('view-players-list')">🏃 סגל שחקנים</button>
                 <button class="btn-main" onclick="showView('view-notes-main')">📝 הערות וטקטיקה</button>
+                <button class="btn-main" onclick="openRecurringView()">🔁 אימונים קבועים וחגים</button>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- אימונים קבועים וחגים -->
+        <!-- ========================================== -->
+        <div id="view-recurring" class="view">
+            <h2>🔁 אימונים קבועים וחגים</h2>
+            <button class="btn btn-secondary" style="width:100%; margin-bottom:15px;" onclick="showView('view-team-dashboard')">⬅ חזרה לקבוצה</button>
+
+            <div class="card" style="margin-bottom:15px;">
+                <h3 style="color:var(--primary); margin-bottom:10px;">➕ הוספת אימון קבוע</h3>
+                <div class="form-group">
+                    <label>כותרת האימון:</label>
+                    <input type="text" id="recurring-title-input" placeholder="למשל: אימון שבועי">
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <div class="form-group" style="flex:1;">
+                        <label>יום בשבוע:</label>
+                        <select id="recurring-weekday-input">
+                            <option value="0">ראשון</option>
+                            <option value="1">שני</option>
+                            <option value="2">שלישי</option>
+                            <option value="3">רביעי</option>
+                            <option value="4">חמישי</option>
+                            <option value="5">שישי</option>
+                            <option value="6">שבת</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>שעה:</label>
+                        <input type="time" id="recurring-time-input">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>מיקום:</label>
+                    <input type="text" id="recurring-location-input" placeholder="למשל: אולם הספורט העירוני">
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <div class="form-group" style="flex:1;">
+                        <label>מתאריך (לא חובה):</label>
+                        <input type="date" id="recurring-start-input">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>עד תאריך (לא חובה):</label>
+                        <input type="date" id="recurring-end-input">
+                    </div>
+                </div>
+                <button class="btn" style="width:100%;" onclick="addRecurringPractice()">הוסף אימון קבוע</button>
+            </div>
+
+            <div class="card" style="margin-bottom:15px;">
+                <h3 style="color:var(--primary); margin-bottom:10px;">📋 אימונים קבועים קיימים</h3>
+                <div id="recurring-list"></div>
+            </div>
+
+            <div class="card" style="margin-bottom:15px;">
+                <h3 style="color:var(--primary); margin-bottom:10px;">🎌 הוספת חג / תאריך ללא אימונים</h3>
+                <div class="form-group">
+                    <label>שם (לדוגמה: חופשת פסח):</label>
+                    <input type="text" id="holiday-name-input" placeholder="שם החג / האירוע">
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <div class="form-group" style="flex:1;">
+                        <label>מתאריך:</label>
+                        <input type="date" id="holiday-start-input">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>עד תאריך:</label>
+                        <input type="date" id="holiday-end-input">
+                    </div>
+                </div>
+                <button class="btn" style="width:100%;" onclick="addHoliday()">הוסף חג</button>
+            </div>
+
+            <div class="card">
+                <h3 style="color:var(--primary); margin-bottom:10px;">📋 רשימת חגים</h3>
+                <div id="holiday-list"></div>
             </div>
         </div>
 
@@ -1390,6 +1469,160 @@
             renderCalendar();
         }
 
+        function openRecurringView() {
+            showView('view-recurring');
+            renderRecurringList();
+            renderHolidayList();
+        }
+
+        async function addRecurringPractice() {
+            const team = getCurrentTeam();
+            if (!team) return;
+
+            const title = document.getElementById('recurring-title-input').value.trim() || 'אימון קבוע';
+            const weekday = parseInt(document.getElementById('recurring-weekday-input').value, 10);
+            const time = document.getElementById('recurring-time-input').value;
+            const location = document.getElementById('recurring-location-input').value.trim();
+            const startDate = document.getElementById('recurring-start-input').value || null;
+            const endDate = document.getElementById('recurring-end-input').value || null;
+
+            if (!time) {
+                alert('נא לבחור שעה לאימון הקבוע');
+                return;
+            }
+
+            if (!team.recurringPractices) team.recurringPractices = [];
+            team.recurringPractices.push({
+                id: 'rec_' + Date.now(),
+                title,
+                weekday,
+                time,
+                location,
+                type: 'half',
+                startDate,
+                endDate
+            });
+
+            saveState();
+
+            document.getElementById('recurring-title-input').value = '';
+            document.getElementById('recurring-time-input').value = '';
+            document.getElementById('recurring-location-input').value = '';
+            document.getElementById('recurring-start-input').value = '';
+            document.getElementById('recurring-end-input').value = '';
+
+            renderRecurringList();
+            alert('האימון הקבוע נוסף! הוא יופיע בכל ' + HEBREW_WEEKDAYS_FULL[weekday] + ' בשעה ' + time + ' בלוח השנה.');
+        }
+
+        function renderRecurringList() {
+            const team = getCurrentTeam();
+            const container = document.getElementById('recurring-list');
+            if (!container) return;
+
+            const rules = (team && team.recurringPractices) || [];
+            if (rules.length === 0) {
+                container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">אין אימונים קבועים עדיין.</p>';
+                return;
+            }
+
+            container.innerHTML = rules.map(r => `
+                <div class="note-card">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                        <div>
+                            <strong>${r.title}</strong>
+                            <p style="font-size:0.85rem; color:var(--info); margin-top:2px;">
+                                כל יום ${HEBREW_WEEKDAYS_FULL[r.weekday]}${r.time ? ', 🕒 ' + r.time : ''}${r.location ? ' • 📍 ' + r.location : ''}
+                            </p>
+                            ${(r.startDate || r.endDate) ? `<p style="font-size:0.8rem; color:var(--text-muted);">${r.startDate ? 'מ-' + r.startDate : ''}${r.endDate ? ' עד ' + r.endDate : ''}</p>` : ''}
+                        </div>
+                        <button class="btn btn-danger" style="padding:6px 10px; font-size:0.75rem; flex-shrink:0;" onclick="deleteRecurringPractice('${r.id}')">מחק</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function deleteRecurringPractice(ruleId) {
+            const team = getCurrentTeam();
+            if (!team || !confirm('למחוק את האימון הקבוע? כל המופעים העתידיים שלו יימחקו מהלוח (אימונים בודדים שכבר נערכו ידנית יישארו).')) return;
+
+            team.recurringPractices = (team.recurringPractices || []).filter(r => r.id !== ruleId);
+
+            if (team.practiceSkips) {
+                Object.keys(team.practiceSkips).forEach(dateKey => {
+                    team.practiceSkips[dateKey] = team.practiceSkips[dateKey].filter(id => id !== ruleId);
+                    if (team.practiceSkips[dateKey].length === 0) delete team.practiceSkips[dateKey];
+                });
+            }
+
+            saveState();
+            renderRecurringList();
+            renderCalendar();
+        }
+
+        async function addHoliday() {
+            const team = getCurrentTeam();
+            if (!team) return;
+
+            const name = document.getElementById('holiday-name-input').value.trim() || 'חג';
+            const startDate = document.getElementById('holiday-start-input').value;
+            const endDate = document.getElementById('holiday-end-input').value || startDate;
+
+            if (!startDate) {
+                alert('נא לבחור תאריך לחג');
+                return;
+            }
+
+            if (!team.holidays) team.holidays = [];
+            team.holidays.push({ id: 'hol_' + Date.now(), name, startDate, endDate });
+
+            saveState();
+
+            document.getElementById('holiday-name-input').value = '';
+            document.getElementById('holiday-start-input').value = '';
+            document.getElementById('holiday-end-input').value = '';
+
+            renderHolidayList();
+            renderCalendar();
+            alert('החג נוסף - אימונים קבועים לא יופיעו בתאריכים אלו.');
+        }
+
+        function renderHolidayList() {
+            const team = getCurrentTeam();
+            const container = document.getElementById('holiday-list');
+            if (!container) return;
+
+            const holidays = (team && team.holidays) || [];
+            if (holidays.length === 0) {
+                container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">אין חגים מוגדרים עדיין.</p>';
+                return;
+            }
+
+            container.innerHTML = holidays.map(h => `
+                <div class="note-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <div>
+                            <strong>${h.name}</strong>
+                            <p style="font-size:0.85rem; color:var(--text-muted); margin-top:2px;">
+                                ${h.startDate}${h.endDate && h.endDate !== h.startDate ? ' עד ' + h.endDate : ''}
+                            </p>
+                        </div>
+                        <button class="btn btn-danger" style="padding:6px 10px; font-size:0.75rem; flex-shrink:0;" onclick="deleteHoliday('${h.id}')">מחק</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function deleteHoliday(holidayId) {
+            const team = getCurrentTeam();
+            if (!team) return;
+
+            team.holidays = (team.holidays || []).filter(h => h.id !== holidayId);
+            saveState();
+            renderHolidayList();
+            renderCalendar();
+        }
+
         let calendarViewMode = 'month'; // 'day' | 'week' | 'month'
 
         const HEBREW_WEEKDAYS_FULL = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
@@ -1432,6 +1665,53 @@
             let list = team.practices[dateKey];
             if (!Array.isArray(list)) list = [list];
             return list;
+        }
+
+        function parseDateKey(dateKey) {
+            const [y, m, d] = dateKey.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        function isHoliday(team, dateKey) {
+            if (!team || !team.holidays) return false;
+            return team.holidays.some(h => dateKey >= h.startDate && dateKey <= (h.endDate || h.startDate));
+        }
+
+        function getHolidayInfo(team, dateKey) {
+            if (!team || !team.holidays) return null;
+            return team.holidays.find(h => dateKey >= h.startDate && dateKey <= (h.endDate || h.startDate)) || null;
+        }
+
+        function getRecurringInstancesForDate(team, dateKey) {
+            if (!team || !team.recurringPractices || team.recurringPractices.length === 0) return [];
+            if (isHoliday(team, dateKey)) return [];
+
+            const weekday = parseDateKey(dateKey).getDay();
+            const skips = (team.practiceSkips && team.practiceSkips[dateKey]) || [];
+
+            return team.recurringPractices
+                .filter(rule => {
+                    if (rule.weekday !== weekday) return false;
+                    if (rule.startDate && dateKey < rule.startDate) return false;
+                    if (rule.endDate && dateKey > rule.endDate) return false;
+                    if (skips.includes(rule.id)) return false;
+                    return true;
+                })
+                .map(rule => ({
+                    id: 'virtual_' + rule.id + '_' + dateKey,
+                    title: rule.title,
+                    time: rule.time,
+                    location: rule.location,
+                    type: rule.type || 'half',
+                    notes: '',
+                    canvasImg: null,
+                    isRecurringVirtual: true,
+                    recurringId: rule.id
+                }));
+        }
+
+        function getEffectivePracticesForDate(team, dateKey) {
+            return [...getPracticesForDate(team, dateKey), ...getRecurringInstancesForDate(team, dateKey)];
         }
 
         function renderCalendar() {
@@ -1491,18 +1771,23 @@
                 const monthStr = String(month + 1).padStart(2, '0');
                 const dateKey = `${year}-${monthStr}-${dayStr}`;
 
-                const practicesList = getPracticesForDate(currentTeam, dateKey);
+                const practicesList = getEffectivePracticesForDate(currentTeam, dateKey);
                 const count = practicesList.length;
                 const timesText = practicesList.filter(p => p.time).map(p => p.time).join(', ');
+                const holiday = getHolidayInfo(currentTeam, dateKey);
 
                 const cell = document.createElement('div');
                 cell.className = `cal-day-cell ${count > 0 ? 'has-practice' : ''}`;
-                if (count > 0) {
+                if (holiday) {
+                    cell.style.backgroundColor = '#334155';
+                    cell.style.opacity = '0.7';
+                } else if (count > 0) {
                     cell.style.borderColor = teamColor;
                     cell.style.backgroundColor = teamColor + '33';
                 }
                 cell.innerHTML = `
                     <span><strong>${day}</strong></span>
+                    ${holiday ? `<span style="font-size:0.6rem; color:var(--text-muted); display:block;">🎌 ${holiday.name}</span>` : ''}
                     ${count > 0 ? `<span class="practice-badge" style="background:${teamColor};">${count} אימונים</span>` : ''}
                     ${timesText ? `<span style="font-size:0.65rem; color:var(--text-muted); display:block;">${timesText}</span>` : ''}
                 `;
@@ -1531,8 +1816,9 @@
                 const d = new Date(weekStart);
                 d.setDate(d.getDate() + i);
                 const dateKey = formatDateKey(d);
-                const practicesList = getPracticesForDate(currentTeam, dateKey);
+                const practicesList = getEffectivePracticesForDate(currentTeam, dateKey);
                 const isToday = dateKey === todayKey;
+                const holiday = getHolidayInfo(currentTeam, dateKey);
 
                 const dayCard = document.createElement('div');
                 dayCard.className = 'card';
@@ -1543,11 +1829,11 @@
                 dayCard.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <strong style="color:${isToday ? teamColor : 'inherit'};">יום ${HEBREW_WEEKDAYS_FULL[i]}, ${d.getDate()}/${d.getMonth() + 1}</strong>
-                        ${practicesList.length > 0 ? `<span class="practice-badge" style="background:${teamColor};">${practicesList.length} אימונים</span>` : ''}
+                        ${holiday ? `<span style="font-size:0.75rem; color:var(--text-muted);">🎌 ${holiday.name}</span>` : (practicesList.length > 0 ? `<span class="practice-badge" style="background:${teamColor};">${practicesList.length} אימונים</span>` : '')}
                     </div>
                     ${practicesList.map(p => `
                         <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border-color);">
-                            <strong>${p.title || 'אימון'}</strong>
+                            <strong>${p.title || 'אימון'}</strong> ${p.isRecurringVirtual ? '<span style="font-size:0.7rem; color:var(--text-muted);">🔁 קבוע</span>' : ''}
                             ${(p.time || p.location) ? `<p style="font-size:0.85rem; color:var(--info);">${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
                         </div>
                     `).join('')}
@@ -1565,15 +1851,20 @@
             document.getElementById('cal-month-year').innerText =
                 `יום ${HEBREW_WEEKDAYS_FULL[weekdayIndex]}, ${currentDate.getDate()} ב${hebrewMonths[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
 
-            const practicesList = getPracticesForDate(currentTeam, dateKey);
+            const practicesList = getEffectivePracticesForDate(currentTeam, dateKey);
+            const holiday = getHolidayInfo(currentTeam, dateKey);
 
             const grid = document.getElementById('calendar-days-grid');
             grid.className = '';
             grid.style.cssText = 'display:block;';
             grid.innerHTML = '';
 
+            if (holiday) {
+                grid.innerHTML += `<div class="card" style="margin-bottom:10px; background:#334155;"><p>🎌 <strong>${holiday.name}</strong> - אין אימונים ביום זה.</p></div>`;
+            }
+
             if (practicesList.length === 0) {
-                grid.innerHTML = `<div class="card"><p style="color:var(--text-muted);">אין אימונים ביום זה. לחץ למטה כדי להוסיף.</p></div>`;
+                grid.innerHTML += `<div class="card"><p style="color:var(--text-muted);">אין אימונים ביום זה. לחץ למטה כדי להוסיף.</p></div>`;
             } else {
                 practicesList.forEach(p => {
                     const item = document.createElement('div');
@@ -1581,7 +1872,7 @@
                     item.style.cursor = 'pointer';
                     item.innerHTML = `
                         <div>
-                            <h3 style="color:${teamColor};">${p.title || 'אימון'}</h3>
+                            <h3 style="color:${teamColor};">${p.title || 'אימון'} ${p.isRecurringVirtual ? '<span style="font-size:0.7rem; color:var(--text-muted);">🔁 קבוע</span>' : ''}</h3>
                             ${(p.time || p.location) ? `<p style="font-size:0.9rem; color:var(--info); font-weight:bold;">${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
                             <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${p.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
                         </div>
@@ -1623,11 +1914,7 @@
         }
 
         function getTeamsWithPracticeOn(dateKey) {
-            return appState.teams.filter(t => {
-                const p = t.practices && t.practices[dateKey];
-                if (!p) return false;
-                return Array.isArray(p) ? p.length > 0 : true;
-            });
+            return appState.teams.filter(t => getEffectivePracticesForDate(t, dateKey).length > 0);
         }
 
         function renderGlobalCalendar() {
@@ -1737,11 +2024,10 @@
                 dayCard.style.cursor = 'pointer';
 
                 const teamRows = teamsWithPractice.map(t => {
-                    let practicesList = t.practices[dateKey];
-                    if (!Array.isArray(practicesList)) practicesList = [practicesList];
+                    const practicesList = getEffectivePracticesForDate(t, dateKey);
                     const timesLocations = practicesList
                         .filter(p => p.time || p.location)
-                        .map(p => `${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
+                        .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
                         .join('<br>');
                     return `
                         <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border-color); border-right:4px solid ${getTeamColor(t)}; padding-right:8px;">
@@ -1810,12 +2096,10 @@
                 ? `
                     <h4 style="margin-bottom:8px;">אימונים בתאריך ${dateKey}:</h4>
                     ${teamsWithPractice.map(t => {
-                        let practicesList = t.practices && t.practices[dateKey];
-                        if (!practicesList) practicesList = [];
-                        if (!Array.isArray(practicesList)) practicesList = [practicesList];
+                        const practicesList = getEffectivePracticesForDate(t, dateKey);
                         const timesLocations = practicesList
                             .filter(p => p.time || p.location)
-                            .map(p => `${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
+                            .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
                             .join('<br>');
                         return `
                             <div class="note-card" style="cursor:pointer; border-right: 4px solid ${getTeamColor(t)};" onclick="jumpToTeamDay('${t.id}', '${dateKey}')">
@@ -1879,10 +2163,42 @@
                 team.practices[selectedPracticeDateStr] = practices;
             }
 
-            if (practices.length === 0) {
-                container.innerHTML = '<div class="card"><p style="color:var(--text-muted)">אין אימונים/תרגילים מוגדרים ליום זה עדיין. לחץ "הוסף אימון" כדי ליצור אחד!</p></div>';
+            const holiday = getHolidayInfo(team, selectedPracticeDateStr);
+            if (holiday) {
+                const holidayBanner = document.createElement('div');
+                holidayBanner.className = 'card';
+                holidayBanner.style.background = '#334155';
+                holidayBanner.style.marginBottom = '10px';
+                holidayBanner.innerHTML = `<p>🎌 <strong>${holiday.name}</strong> - יום זה מוגדר כחג, אימונים קבועים לא יופיעו בו אוטומטית.</p>`;
+                container.appendChild(holidayBanner);
+            }
+
+            const virtualPractices = getRecurringInstancesForDate(team, selectedPracticeDateStr);
+
+            if (practices.length === 0 && virtualPractices.length === 0) {
+                container.innerHTML += '<div class="card"><p style="color:var(--text-muted)">אין אימונים/תרגילים מוגדרים ליום זה עדיין. לחץ "הוסף אימון" כדי ליצור אחד!</p></div>';
                 return;
             }
+
+            virtualPractices.forEach(practice => {
+                const card = document.createElement('div');
+                card.className = 'practice-item-card';
+                card.style.borderColor = 'var(--primary)';
+                card.innerHTML = `
+                    <div class="practice-item-header">
+                        <div>
+                            <h3 style="color:var(--primary);">${practice.title} <span style="font-size:0.7rem; color:var(--text-muted);">🔁 אימון קבוע</span></h3>
+                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + practice.time : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
+                            <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${practice.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
+                        </div>
+                    </div>
+                    <div class="practice-actions-row">
+                        <button class="btn" style="padding: 6px 12px; font-size:0.85rem;" onclick="editVirtualPracticeForDate('${practice.recurringId}', '${selectedPracticeDateStr}')">✏️ ערוך ליום זה</button>
+                        <button class="btn btn-danger" style="padding: 6px 10px; font-size:0.85rem;" onclick="skipVirtualPracticeForDate('${practice.recurringId}', '${selectedPracticeDateStr}')">🚫 בטל ליום זה</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
 
             practices.forEach((practice, index) => {
                 const card = document.createElement('div');
@@ -1904,6 +2220,50 @@
                 `;
                 container.appendChild(card);
             });
+        }
+
+        function editVirtualPracticeForDate(recurringId, dateKey) {
+            const team = getCurrentTeam();
+            const rule = (team.recurringPractices || []).find(r => r.id === recurringId);
+            if (!rule) return;
+
+            if (!team.practices) team.practices = {};
+            if (!Array.isArray(team.practices[dateKey])) team.practices[dateKey] = [];
+
+            const newId = 'prc_' + Date.now();
+            team.practices[dateKey].push({
+                id: newId,
+                title: rule.title,
+                type: rule.type || 'half',
+                time: rule.time || '',
+                location: rule.location || '',
+                notes: '',
+                canvasImg: null,
+                sourceRecurringId: recurringId
+            });
+
+            if (!team.practiceSkips) team.practiceSkips = {};
+            if (!team.practiceSkips[dateKey]) team.practiceSkips[dateKey] = [];
+            if (!team.practiceSkips[dateKey].includes(recurringId)) {
+                team.practiceSkips[dateKey].push(recurringId);
+            }
+
+            saveState();
+            editPractice(newId);
+        }
+
+        function skipVirtualPracticeForDate(recurringId, dateKey) {
+            if (!confirm('לבטל את האימון הקבוע ליום זה בלבד? (הכלל עצמו יישאר פעיל בשאר השבועות)')) return;
+
+            const team = getCurrentTeam();
+            if (!team.practiceSkips) team.practiceSkips = {};
+            if (!team.practiceSkips[dateKey]) team.practiceSkips[dateKey] = [];
+            if (!team.practiceSkips[dateKey].includes(recurringId)) {
+                team.practiceSkips[dateKey].push(recurringId);
+            }
+
+            saveState();
+            renderDayPracticesList();
         }
 
         function createNewPracticeForSelectedDay() {
