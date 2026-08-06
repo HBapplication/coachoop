@@ -700,6 +700,14 @@
                 </div>
                 <div id="global-cal-legend" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:14px;"></div>
                 <div id="global-cal-day-details" style="margin-top:14px;"></div>
+
+                <div class="card" style="margin-top:14px; padding:12px;" id="global-recurring-manager">
+                    <label style="font-size:0.85rem; color:var(--text-muted);">🔁 נהל אימונים קבועים / חגים לקבוצה:</label>
+                    <div style="display:flex; gap:8px; margin-top:8px;">
+                        <select id="global-recurring-team-select" style="flex:1;"></select>
+                        <button class="btn" style="padding:8px 14px;" onclick="jumpToTeamRecurring(document.getElementById('global-recurring-team-select').value)">נהל</button>
+                    </div>
+                </div>
             </div>
 
             <div id="teams-container" style="display: flex; flex-direction: column; gap: 10px;">
@@ -2077,15 +2085,23 @@
 
             if (appState.teams.length === 0) {
                 legend.innerHTML = '';
-                return;
+            } else {
+                legend.innerHTML = appState.teams.map(t => `
+                    <div style="display:flex; align-items:center; gap:6px; font-size:0.8rem; color:var(--text-muted);">
+                        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${getTeamColor(t)};"></span>
+                        ${t.name}
+                    </div>
+                `).join('');
             }
 
-            legend.innerHTML = appState.teams.map(t => `
-                <div style="display:flex; align-items:center; gap:6px; font-size:0.8rem; color:var(--text-muted);">
-                    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${getTeamColor(t)};"></span>
-                    ${t.name}
-                </div>
-            `).join('');
+            const recurringSelect = document.getElementById('global-recurring-team-select');
+            const recurringManager = document.getElementById('global-recurring-manager');
+            if (recurringSelect) {
+                recurringSelect.innerHTML = appState.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+            }
+            if (recurringManager) {
+                recurringManager.style.display = appState.teams.length > 0 ? 'block' : 'none';
+            }
         }
 
         function showGlobalDayDetails(dateKey, teamsWithPractice) {
@@ -2140,6 +2156,20 @@
             showView('view-calendar');
             renderCalendar();
             openDayPractices(dateKey);
+        }
+
+        function jumpToTeamRecurring(teamId) {
+            if (!teamId) return;
+            appState.currentTeamId = teamId;
+            const team = getCurrentTeam();
+            if (!team) return;
+
+            document.getElementById('active-team-name').innerText = team.name;
+            document.getElementById('active-team-name').style.display = 'inline-block';
+            document.getElementById('dash-team-title').innerText = team.name;
+            document.getElementById('dash-coach-title').innerText = 'מאמן: ' + team.coach;
+
+            openRecurringView();
         }
 
         // פתיחת רשימת אימוני היום
