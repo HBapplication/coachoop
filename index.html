@@ -777,9 +777,15 @@
                             <option value="6">שבת</option>
                         </select>
                     </div>
+                </div>
+                <div style="display:flex; gap:10px;">
                     <div class="form-group" style="flex:1;">
-                        <label>שעה:</label>
-                        <input type="time" id="recurring-time-input">
+                        <label>שעת התחלה:</label>
+                        <input type="time" id="recurring-time-input" oninput="autoFillEndTime('recurring-time-input', 'recurring-endtime-input')">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>שעת סיום:</label>
+                        <input type="time" id="recurring-endtime-input">
                     </div>
                 </div>
                 <div class="form-group">
@@ -893,13 +899,17 @@
 
                 <div style="display: flex; gap: 10px;">
                     <div class="form-group" style="flex:1;">
-                        <label>שעת האימון:</label>
-                        <input type="time" id="practice-time-input">
+                        <label>שעת התחלה:</label>
+                        <input type="time" id="practice-time-input" oninput="autoFillEndTime('practice-time-input', 'practice-endtime-input')">
                     </div>
-                    <div class="form-group" style="flex:2;">
-                        <label>מיקום האימון:</label>
-                        <input type="text" id="practice-location-input" placeholder="למשל: אולם הספורט העירוני">
+                    <div class="form-group" style="flex:1;">
+                        <label>שעת סיום:</label>
+                        <input type="time" id="practice-endtime-input">
                     </div>
+                </div>
+                <div class="form-group">
+                    <label>מיקום האימון:</label>
+                    <input type="text" id="practice-location-input" placeholder="למשל: אולם הספורט העירוני">
                 </div>
 
                 <label>סוג מגרש:</label>
@@ -1492,12 +1502,13 @@
             const title = document.getElementById('recurring-title-input').value.trim() || 'אימון קבוע';
             const weekday = parseInt(document.getElementById('recurring-weekday-input').value, 10);
             const time = document.getElementById('recurring-time-input').value;
+            const endTime = document.getElementById('recurring-endtime-input').value;
             const location = document.getElementById('recurring-location-input').value.trim();
             const startDate = document.getElementById('recurring-start-input').value || null;
             const endDate = document.getElementById('recurring-end-input').value || null;
 
             if (!time) {
-                alert('נא לבחור שעה לאימון הקבוע');
+                alert('נא לבחור שעת התחלה לאימון הקבוע');
                 return;
             }
 
@@ -1507,6 +1518,7 @@
                 title,
                 weekday,
                 time,
+                endTime,
                 location,
                 type: 'half',
                 startDate,
@@ -1517,6 +1529,7 @@
 
             document.getElementById('recurring-title-input').value = '';
             document.getElementById('recurring-time-input').value = '';
+            document.getElementById('recurring-endtime-input').value = '';
             document.getElementById('recurring-location-input').value = '';
             document.getElementById('recurring-start-input').value = '';
             document.getElementById('recurring-end-input').value = '';
@@ -1542,7 +1555,7 @@
                         <div>
                             <strong>${r.title}</strong>
                             <p style="font-size:0.85rem; color:var(--info); margin-top:2px;">
-                                כל יום ${HEBREW_WEEKDAYS_FULL[r.weekday]}${r.time ? ', 🕒 ' + r.time : ''}${r.location ? ' • 📍 ' + r.location : ''}
+                                כל יום ${HEBREW_WEEKDAYS_FULL[r.weekday]}${r.time ? ', 🕒 ' + formatTimeRange(r) : ''}${r.location ? ' • 📍 ' + r.location : ''}
                             </p>
                             ${(r.startDate || r.endDate) ? `<p style="font-size:0.8rem; color:var(--text-muted);">${r.startDate ? 'מ-' + r.startDate : ''}${r.endDate ? ' עד ' + r.endDate : ''}</p>` : ''}
                         </div>
@@ -1663,6 +1676,29 @@
             return `${y}-${m}-${day}`;
         }
 
+        function calcEndTime(startTime, minutesToAdd = 90) {
+            if (!startTime) return '';
+            const [h, m] = startTime.split(':').map(Number);
+            let total = h * 60 + m + minutesToAdd;
+            total = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+            const endH = Math.floor(total / 60);
+            const endM = total % 60;
+            return String(endH).padStart(2, '0') + ':' + String(endM).padStart(2, '0');
+        }
+
+        function autoFillEndTime(startInputId, endInputId) {
+            const startVal = document.getElementById(startInputId).value;
+            const endInput = document.getElementById(endInputId);
+            if (startVal) {
+                endInput.value = calcEndTime(startVal, 90);
+            }
+        }
+
+        function formatTimeRange(item) {
+            if (!item || !item.time) return '';
+            return item.endTime ? `${item.time}-${item.endTime}` : item.time;
+        }
+
         function getWeekStart(date) {
             const d = new Date(date);
             d.setDate(d.getDate() - d.getDay());
@@ -1711,6 +1747,7 @@
                     id: 'virtual_' + rule.id + '_' + dateKey,
                     title: rule.title,
                     time: rule.time,
+                    endTime: rule.endTime || '',
                     location: rule.location,
                     type: rule.type || 'half',
                     notes: '',
@@ -1783,7 +1820,7 @@
 
                 const practicesList = getEffectivePracticesForDate(currentTeam, dateKey);
                 const count = practicesList.length;
-                const timesText = practicesList.filter(p => p.time).map(p => p.time).join(', ');
+                const timesText = practicesList.filter(p => p.time).map(p => formatTimeRange(p)).join(', ');
                 const holiday = getHolidayInfo(currentTeam, dateKey);
 
                 const cell = document.createElement('div');
@@ -1844,7 +1881,7 @@
                     ${practicesList.map(p => `
                         <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border-color);">
                             <strong>${p.title || 'אימון'}</strong> ${p.isRecurringVirtual ? '<span style="font-size:0.7rem; color:var(--text-muted);">🔁 קבוע</span>' : ''}
-                            ${(p.time || p.location) ? `<p style="font-size:0.85rem; color:var(--info);">${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
+                            ${(p.time || p.location) ? `<p style="font-size:0.85rem; color:var(--info);">${p.time ? '🕒 ' + formatTimeRange(p) : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
                         </div>
                     `).join('')}
                 `;
@@ -1883,7 +1920,7 @@
                     item.innerHTML = `
                         <div>
                             <h3 style="color:${teamColor};">${p.title || 'אימון'} ${p.isRecurringVirtual ? '<span style="font-size:0.7rem; color:var(--text-muted);">🔁 קבוע</span>' : ''}</h3>
-                            ${(p.time || p.location) ? `<p style="font-size:0.9rem; color:var(--info); font-weight:bold;">${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
+                            ${(p.time || p.location) ? `<p style="font-size:0.9rem; color:var(--info); font-weight:bold;">${p.time ? '🕒 ' + formatTimeRange(p) : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
                             <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${p.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
                         </div>
                     `;
@@ -2009,7 +2046,7 @@
                     const p = day.practices[0];
                     ctx.fillStyle = teamColor;
                     ctx.font = 'bold 22px Arial';
-                    ctx.fillText(p.time || '', 55, centerY - 8);
+                    ctx.fillText(formatTimeRange(p), 55, centerY - 8);
 
                     ctx.fillStyle = '#cbd5e1';
                     ctx.font = '17px Arial';
@@ -2203,7 +2240,7 @@
                     const practicesList = getEffectivePracticesForDate(t, dateKey);
                     const timesLocations = practicesList
                         .filter(p => p.time || p.location)
-                        .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
+                        .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + formatTimeRange(p) : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
                         .join('<br>');
                     return `
                         <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border-color); border-right:4px solid ${getTeamColor(t)}; padding-right:8px;">
@@ -2283,7 +2320,7 @@
                         const practicesList = getEffectivePracticesForDate(t, dateKey);
                         const timesLocations = practicesList
                             .filter(p => p.time || p.location)
-                            .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
+                            .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + formatTimeRange(p) : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
                             .join('<br>');
                         return `
                             <div class="note-card" style="cursor:pointer; border-right: 4px solid ${getTeamColor(t)};" onclick="jumpToTeamDay('${t.id}', '${dateKey}')">
@@ -2386,7 +2423,7 @@
                     <div class="practice-item-header">
                         <div>
                             <h3 style="color:var(--primary);">${practice.title} <span style="font-size:0.7rem; color:var(--text-muted);">🔁 אימון קבוע</span></h3>
-                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + practice.time : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
+                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + formatTimeRange(practice) : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
                             <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${practice.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
                         </div>
                     </div>
@@ -2405,7 +2442,7 @@
                     <div class="practice-item-header">
                         <div>
                             <h3 style="color:var(--primary);">${practice.title || 'תרגיל ' + (index + 1)}</h3>
-                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + practice.time : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
+                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + formatTimeRange(practice) : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
                             <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${practice.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
                             <p style="font-size:0.85rem; margin-top:4px;">${practice.notes ? practice.notes.substring(0, 50) + '...' : 'ללא הערות'}</p>
                         </div>
@@ -2434,6 +2471,7 @@
                 title: rule.title,
                 type: rule.type || 'half',
                 time: rule.time || '',
+                endTime: rule.endTime || '',
                 location: rule.location || '',
                 notes: '',
                 canvasImg: null,
@@ -2479,6 +2517,7 @@
                 title: `תרגיל / אימון ${count}`,
                 type: 'half',
                 time: '',
+                endTime: '',
                 location: '',
                 notes: '',
                 canvasImg: null
@@ -2519,6 +2558,7 @@
                 title: newTitle,
                 type: practiceToCopy.type,
                 time: practiceToCopy.time || '',
+                endTime: practiceToCopy.endTime || '',
                 location: practiceToCopy.location || '',
                 notes: practiceToCopy.notes || '',
                 canvasImg: practiceToCopy.canvasImg || null
@@ -2546,6 +2586,7 @@
             document.getElementById('practice-edit-title').innerText = `עריכת תרגיל לתאריך ${selectedPracticeDateStr}`;
             document.getElementById('practice-title-input').value = practice.title || '';
             document.getElementById('practice-time-input').value = practice.time || '';
+            document.getElementById('practice-endtime-input').value = practice.endTime || '';
             document.getElementById('practice-location-input').value = practice.location || '';
             setCourtType(practice.type || 'half');
             document.getElementById('practice-notes-input').value = practice.notes || '';
@@ -2572,6 +2613,7 @@
                 practice.title = document.getElementById('practice-title-input').value.trim() || 'אימון';
                 practice.type = currentCourtType;
                 practice.time = document.getElementById('practice-time-input').value;
+                practice.endTime = document.getElementById('practice-endtime-input').value;
                 practice.location = document.getElementById('practice-location-input').value.trim();
                 practice.notes = document.getElementById('practice-notes-input').value;
                 if (canvas) {
