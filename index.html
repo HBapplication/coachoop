@@ -700,6 +700,14 @@
                 </div>
                 <div id="global-cal-legend" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:14px;"></div>
                 <div id="global-cal-day-details" style="margin-top:14px;"></div>
+
+                <div class="card" style="margin-top:14px; padding:12px;" id="global-recurring-manager">
+                    <label style="font-size:0.85rem; color:var(--text-muted);">🔁 נהל אימונים קבועים / חגים לקבוצה:</label>
+                    <div style="display:flex; gap:8px; margin-top:8px;">
+                        <select id="global-recurring-team-select" style="flex:1;"></select>
+                        <button class="btn" style="padding:8px 14px;" onclick="jumpToTeamRecurring(document.getElementById('global-recurring-team-select').value)">נהל</button>
+                    </div>
+                </div>
             </div>
 
             <div id="teams-container" style="display: flex; flex-direction: column; gap: 10px;">
@@ -769,9 +777,15 @@
                             <option value="6">שבת</option>
                         </select>
                     </div>
+                </div>
+                <div style="display:flex; gap:10px;">
                     <div class="form-group" style="flex:1;">
-                        <label>שעה:</label>
-                        <input type="time" id="recurring-time-input">
+                        <label>שעת התחלה:</label>
+                        <input type="time" id="recurring-time-input" oninput="autoFillEndTime('recurring-time-input', 'recurring-endtime-input')">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>שעת סיום:</label>
+                        <input type="time" id="recurring-endtime-input">
                     </div>
                 </div>
                 <div class="form-group">
@@ -834,6 +848,8 @@
                 <button class="court-type-btn selected" id="cal-view-month-btn" onclick="setCalendarViewMode('month')">חודשי</button>
             </div>
 
+            <button class="btn" style="width:100%; margin-bottom:15px;" onclick="shareWeeklyScheduleImage()">📸 שיתוף לוז שבועי (וואטסאפ / מייל)</button>
+
             <div class="calendar-header">
                 <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="changeMonth(-1)" id="cal-prev-btn">❮ חודש קודם</button>
                 <h3 id="cal-month-year">יולי 2026</h3>
@@ -883,13 +899,17 @@
 
                 <div style="display: flex; gap: 10px;">
                     <div class="form-group" style="flex:1;">
-                        <label>שעת האימון:</label>
-                        <input type="time" id="practice-time-input">
+                        <label>שעת התחלה:</label>
+                        <input type="time" id="practice-time-input" oninput="autoFillEndTime('practice-time-input', 'practice-endtime-input')">
                     </div>
-                    <div class="form-group" style="flex:2;">
-                        <label>מיקום האימון:</label>
-                        <input type="text" id="practice-location-input" placeholder="למשל: אולם הספורט העירוני">
+                    <div class="form-group" style="flex:1;">
+                        <label>שעת סיום:</label>
+                        <input type="time" id="practice-endtime-input">
                     </div>
+                </div>
+                <div class="form-group">
+                    <label>מיקום האימון:</label>
+                    <input type="text" id="practice-location-input" placeholder="למשל: אולם הספורט העירוני">
                 </div>
 
                 <label>סוג מגרש:</label>
@@ -1482,12 +1502,13 @@
             const title = document.getElementById('recurring-title-input').value.trim() || 'אימון קבוע';
             const weekday = parseInt(document.getElementById('recurring-weekday-input').value, 10);
             const time = document.getElementById('recurring-time-input').value;
+            const endTime = document.getElementById('recurring-endtime-input').value;
             const location = document.getElementById('recurring-location-input').value.trim();
             const startDate = document.getElementById('recurring-start-input').value || null;
             const endDate = document.getElementById('recurring-end-input').value || null;
 
             if (!time) {
-                alert('נא לבחור שעה לאימון הקבוע');
+                alert('נא לבחור שעת התחלה לאימון הקבוע');
                 return;
             }
 
@@ -1497,6 +1518,7 @@
                 title,
                 weekday,
                 time,
+                endTime,
                 location,
                 type: 'half',
                 startDate,
@@ -1507,6 +1529,7 @@
 
             document.getElementById('recurring-title-input').value = '';
             document.getElementById('recurring-time-input').value = '';
+            document.getElementById('recurring-endtime-input').value = '';
             document.getElementById('recurring-location-input').value = '';
             document.getElementById('recurring-start-input').value = '';
             document.getElementById('recurring-end-input').value = '';
@@ -1532,7 +1555,7 @@
                         <div>
                             <strong>${r.title}</strong>
                             <p style="font-size:0.85rem; color:var(--info); margin-top:2px;">
-                                כל יום ${HEBREW_WEEKDAYS_FULL[r.weekday]}${r.time ? ', 🕒 ' + r.time : ''}${r.location ? ' • 📍 ' + r.location : ''}
+                                כל יום ${HEBREW_WEEKDAYS_FULL[r.weekday]}${r.time ? ', 🕒 ' + formatTimeRange(r) : ''}${r.location ? ' • 📍 ' + r.location : ''}
                             </p>
                             ${(r.startDate || r.endDate) ? `<p style="font-size:0.8rem; color:var(--text-muted);">${r.startDate ? 'מ-' + r.startDate : ''}${r.endDate ? ' עד ' + r.endDate : ''}</p>` : ''}
                         </div>
@@ -1653,6 +1676,29 @@
             return `${y}-${m}-${day}`;
         }
 
+        function calcEndTime(startTime, minutesToAdd = 90) {
+            if (!startTime) return '';
+            const [h, m] = startTime.split(':').map(Number);
+            let total = h * 60 + m + minutesToAdd;
+            total = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+            const endH = Math.floor(total / 60);
+            const endM = total % 60;
+            return String(endH).padStart(2, '0') + ':' + String(endM).padStart(2, '0');
+        }
+
+        function autoFillEndTime(startInputId, endInputId) {
+            const startVal = document.getElementById(startInputId).value;
+            const endInput = document.getElementById(endInputId);
+            if (startVal) {
+                endInput.value = calcEndTime(startVal, 90);
+            }
+        }
+
+        function formatTimeRange(item) {
+            if (!item || !item.time) return '';
+            return item.endTime ? `${item.time}-${item.endTime}` : item.time;
+        }
+
         function getWeekStart(date) {
             const d = new Date(date);
             d.setDate(d.getDate() - d.getDay());
@@ -1701,6 +1747,7 @@
                     id: 'virtual_' + rule.id + '_' + dateKey,
                     title: rule.title,
                     time: rule.time,
+                    endTime: rule.endTime || '',
                     location: rule.location,
                     type: rule.type || 'half',
                     notes: '',
@@ -1773,7 +1820,7 @@
 
                 const practicesList = getEffectivePracticesForDate(currentTeam, dateKey);
                 const count = practicesList.length;
-                const timesText = practicesList.filter(p => p.time).map(p => p.time).join(', ');
+                const timesText = practicesList.filter(p => p.time).map(p => formatTimeRange(p)).join(', ');
                 const holiday = getHolidayInfo(currentTeam, dateKey);
 
                 const cell = document.createElement('div');
@@ -1834,7 +1881,7 @@
                     ${practicesList.map(p => `
                         <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border-color);">
                             <strong>${p.title || 'אימון'}</strong> ${p.isRecurringVirtual ? '<span style="font-size:0.7rem; color:var(--text-muted);">🔁 קבוע</span>' : ''}
-                            ${(p.time || p.location) ? `<p style="font-size:0.85rem; color:var(--info);">${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
+                            ${(p.time || p.location) ? `<p style="font-size:0.85rem; color:var(--info);">${p.time ? '🕒 ' + formatTimeRange(p) : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
                         </div>
                     `).join('')}
                 `;
@@ -1873,7 +1920,7 @@
                     item.innerHTML = `
                         <div>
                             <h3 style="color:${teamColor};">${p.title || 'אימון'} ${p.isRecurringVirtual ? '<span style="font-size:0.7rem; color:var(--text-muted);">🔁 קבוע</span>' : ''}</h3>
-                            ${(p.time || p.location) ? `<p style="font-size:0.9rem; color:var(--info); font-weight:bold;">${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
+                            ${(p.time || p.location) ? `<p style="font-size:0.9rem; color:var(--info); font-weight:bold;">${p.time ? '🕒 ' + formatTimeRange(p) : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
                             <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${p.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
                         </div>
                     `;
@@ -1889,6 +1936,188 @@
             addBtn.innerText = '➕ הוסף אימון/תרגיל ליום זה';
             addBtn.onclick = () => openDayPractices(dateKey);
             grid.appendChild(addBtn);
+        }
+
+        // --- שיתוף לוז שבועי כתמונה ---
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        async function shareWeeklyScheduleImage() {
+            const team = getCurrentTeam();
+            if (!team) return;
+
+            const teamColor = getTeamColor(team);
+            const weekStart = getWeekStart(currentDate);
+
+            const days = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(weekStart);
+                d.setDate(d.getDate() + i);
+                const dateKey = formatDateKey(d);
+                days.push({
+                    date: d,
+                    dateKey,
+                    weekdayName: HEBREW_WEEKDAYS_FULL[i],
+                    practices: getEffectivePracticesForDate(team, dateKey).slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')),
+                    holiday: getHolidayInfo(team, dateKey)
+                });
+            }
+
+            const weekEnd = days[6].date;
+            const rangeText = `${weekStart.getDate()}/${weekStart.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}/${weekEnd.getFullYear()}`;
+
+            // --- חישוב גובה דינמי לכל יום (בהתאם לכמות האימונים בו) ---
+            const width = 800;
+            const headerHeight = 190;
+            const footerHeight = 50;
+            const dayHeaderH = 34;
+            const practiceBlockH = 32;
+            const minRowContentH = 30;
+            const rowPadding = 16;
+
+            days.forEach(day => {
+                let contentH;
+                if (day.holiday) {
+                    contentH = minRowContentH;
+                } else if (day.practices.length > 0) {
+                    contentH = day.practices.length * practiceBlockH;
+                } else {
+                    contentH = minRowContentH;
+                }
+                day.rowHeight = dayHeaderH + contentH + rowPadding;
+            });
+
+            const totalRowsHeight = days.reduce((sum, d) => sum + d.rowHeight, 0);
+            const height = headerHeight + totalRowsHeight + footerHeight;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.direction = 'rtl';
+
+            // רקע כללי
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, width, height);
+
+            // פס עליון בצבע הקבוצה
+            ctx.fillStyle = teamColor;
+            ctx.fillRect(0, 0, width, 10);
+
+            // כותרת - שם קבוצה
+            ctx.fillStyle = teamColor;
+            ctx.font = 'bold 40px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(`🏀 ${team.name}`, width / 2, 65);
+
+            // ברכה
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 26px Arial';
+            ctx.fillText('שבוע טוב לכולם! 🏀', width / 2, 105);
+
+            // טווח השבוע
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '20px Arial';
+            ctx.fillText(`לוז שבועי: ${rangeText}`, width / 2, 140);
+
+            // קו הפרדה
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(40, headerHeight - 20);
+            ctx.lineTo(width - 40, headerHeight - 20);
+            ctx.stroke();
+
+            // שורות הימים
+            let y = headerHeight;
+            days.forEach((day, index) => {
+                const rowH = day.rowHeight;
+                const isEven = index % 2 === 0;
+
+                ctx.fillStyle = isEven ? '#1e293b' : '#0f172a';
+                ctx.fillRect(30, y, width - 60, rowH - 8);
+
+                // שם היום + תאריך (למעלה בצד ימין - RTL)
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 22px Arial';
+                ctx.textAlign = 'right';
+                ctx.fillText(`יום ${day.weekdayName}`, width - 55, y + 26);
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '15px Arial';
+                ctx.fillText(`${day.date.getDate()}/${day.date.getMonth() + 1}`, width - 55, y + 46);
+
+                // פרטי אימונים (בצד שמאל)
+                ctx.textAlign = 'left';
+                if (day.holiday) {
+                    ctx.fillStyle = '#facc15';
+                    ctx.font = 'bold 20px Arial';
+                    ctx.fillText(`🎌 ${day.holiday.name} - אין אימון`, 55, y + 40);
+                } else if (day.practices.length > 0) {
+                    day.practices.forEach((p, pIndex) => {
+                        const blockY = dayHeaderH + (pIndex * practiceBlockH);
+
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 18px Arial';
+                        const line = `${p.title || 'אימון'}  •  ${formatTimeRange(p)}${p.location ? '  •  ' + p.location : ''}`;
+                        ctx.fillText(line, 55, y + blockY + 18);
+                    });
+                } else {
+                    ctx.fillStyle = '#475569';
+                    ctx.font = '18px Arial';
+                    ctx.fillText('אין אימון', 55, y + 40);
+                }
+
+                y += rowH;
+            });
+
+            // פוטר
+            ctx.fillStyle = '#475569';
+            ctx.font = '15px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('נוצר באמצעות Coachoop 🏀', width / 2, height - 20);
+
+            // --- המרה לתמונה ושיתוף ---
+            canvas.toBlob(async (blob) => {
+                if (!blob) {
+                    alert('שגיאה ביצירת התמונה. נסה שוב.');
+                    return;
+                }
+
+                const fileName = `לוז-${team.name}-${rangeText.replace(/\//g, '-')}.png`;
+                const file = new File([blob], fileName, { type: 'image/png' });
+                const shareText = `שבוע טוב לכולם! 🏀\nהנה הלוז השבועי של ${team.name} (${rangeText}):`;
+
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: `לוז שבועי - ${team.name}`,
+                            text: shareText
+                        });
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            console.error('שגיאת שיתוף:', err);
+                        }
+                    }
+                } else {
+                    // דפדפן ללא תמיכה בשיתוף קבצים - מוריד את התמונה במקום
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = fileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                    alert('הדפדפן שלך לא תומך בשיתוף ישיר - התמונה הורדה למכשיר, אפשר לצרף אותה ידנית.');
+                }
+            }, 'image/png');
         }
 
         // --- לוח שנה כללי (כל הקבוצות, לפי צבע קבוצה) ---
@@ -2027,7 +2256,7 @@
                     const practicesList = getEffectivePracticesForDate(t, dateKey);
                     const timesLocations = practicesList
                         .filter(p => p.time || p.location)
-                        .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
+                        .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + formatTimeRange(p) : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
                         .join('<br>');
                     return `
                         <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border-color); border-right:4px solid ${getTeamColor(t)}; padding-right:8px;">
@@ -2077,15 +2306,23 @@
 
             if (appState.teams.length === 0) {
                 legend.innerHTML = '';
-                return;
+            } else {
+                legend.innerHTML = appState.teams.map(t => `
+                    <div style="display:flex; align-items:center; gap:6px; font-size:0.8rem; color:var(--text-muted);">
+                        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${getTeamColor(t)};"></span>
+                        ${t.name}
+                    </div>
+                `).join('');
             }
 
-            legend.innerHTML = appState.teams.map(t => `
-                <div style="display:flex; align-items:center; gap:6px; font-size:0.8rem; color:var(--text-muted);">
-                    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${getTeamColor(t)};"></span>
-                    ${t.name}
-                </div>
-            `).join('');
+            const recurringSelect = document.getElementById('global-recurring-team-select');
+            const recurringManager = document.getElementById('global-recurring-manager');
+            if (recurringSelect) {
+                recurringSelect.innerHTML = appState.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+            }
+            if (recurringManager) {
+                recurringManager.style.display = appState.teams.length > 0 ? 'block' : 'none';
+            }
         }
 
         function showGlobalDayDetails(dateKey, teamsWithPractice) {
@@ -2099,7 +2336,7 @@
                         const practicesList = getEffectivePracticesForDate(t, dateKey);
                         const timesLocations = practicesList
                             .filter(p => p.time || p.location)
-                            .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + p.time : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
+                            .map(p => `${p.isRecurringVirtual ? '🔁 ' : ''}${p.time ? '🕒 ' + formatTimeRange(p) : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}`)
                             .join('<br>');
                         return `
                             <div class="note-card" style="cursor:pointer; border-right: 4px solid ${getTeamColor(t)};" onclick="jumpToTeamDay('${t.id}', '${dateKey}')">
@@ -2140,6 +2377,20 @@
             showView('view-calendar');
             renderCalendar();
             openDayPractices(dateKey);
+        }
+
+        function jumpToTeamRecurring(teamId) {
+            if (!teamId) return;
+            appState.currentTeamId = teamId;
+            const team = getCurrentTeam();
+            if (!team) return;
+
+            document.getElementById('active-team-name').innerText = team.name;
+            document.getElementById('active-team-name').style.display = 'inline-block';
+            document.getElementById('dash-team-title').innerText = team.name;
+            document.getElementById('dash-coach-title').innerText = 'מאמן: ' + team.coach;
+
+            openRecurringView();
         }
 
         // פתיחת רשימת אימוני היום
@@ -2188,7 +2439,7 @@
                     <div class="practice-item-header">
                         <div>
                             <h3 style="color:var(--primary);">${practice.title} <span style="font-size:0.7rem; color:var(--text-muted);">🔁 אימון קבוע</span></h3>
-                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + practice.time : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
+                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + formatTimeRange(practice) : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
                             <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${practice.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
                         </div>
                     </div>
@@ -2207,7 +2458,7 @@
                     <div class="practice-item-header">
                         <div>
                             <h3 style="color:var(--primary);">${practice.title || 'תרגיל ' + (index + 1)}</h3>
-                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + practice.time : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
+                            ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + formatTimeRange(practice) : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
                             <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${practice.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
                             <p style="font-size:0.85rem; margin-top:4px;">${practice.notes ? practice.notes.substring(0, 50) + '...' : 'ללא הערות'}</p>
                         </div>
@@ -2236,6 +2487,7 @@
                 title: rule.title,
                 type: rule.type || 'half',
                 time: rule.time || '',
+                endTime: rule.endTime || '',
                 location: rule.location || '',
                 notes: '',
                 canvasImg: null,
@@ -2281,6 +2533,7 @@
                 title: `תרגיל / אימון ${count}`,
                 type: 'half',
                 time: '',
+                endTime: '',
                 location: '',
                 notes: '',
                 canvasImg: null
@@ -2321,6 +2574,7 @@
                 title: newTitle,
                 type: practiceToCopy.type,
                 time: practiceToCopy.time || '',
+                endTime: practiceToCopy.endTime || '',
                 location: practiceToCopy.location || '',
                 notes: practiceToCopy.notes || '',
                 canvasImg: practiceToCopy.canvasImg || null
@@ -2348,6 +2602,7 @@
             document.getElementById('practice-edit-title').innerText = `עריכת תרגיל לתאריך ${selectedPracticeDateStr}`;
             document.getElementById('practice-title-input').value = practice.title || '';
             document.getElementById('practice-time-input').value = practice.time || '';
+            document.getElementById('practice-endtime-input').value = practice.endTime || '';
             document.getElementById('practice-location-input').value = practice.location || '';
             setCourtType(practice.type || 'half');
             document.getElementById('practice-notes-input').value = practice.notes || '';
@@ -2374,6 +2629,7 @@
                 practice.title = document.getElementById('practice-title-input').value.trim() || 'אימון';
                 practice.type = currentCourtType;
                 practice.time = document.getElementById('practice-time-input').value;
+                practice.endTime = document.getElementById('practice-endtime-input').value;
                 practice.location = document.getElementById('practice-location-input').value.trim();
                 practice.notes = document.getElementById('practice-notes-input').value;
                 if (canvas) {
