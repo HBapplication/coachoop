@@ -1974,21 +1974,20 @@
             const width = 800;
             const headerHeight = 190;
             const footerHeight = 50;
-            const dayHeaderH = 34;
-            const practiceBlockH = 32;
-            const minRowContentH = 30;
-            const rowPadding = 16;
+            const practiceLineH = 30;
+            const minRowH = 62;
+            const rowPadding = 18;
 
             days.forEach(day => {
                 let contentH;
                 if (day.holiday) {
-                    contentH = minRowContentH;
+                    contentH = practiceLineH;
                 } else if (day.practices.length > 0) {
-                    contentH = day.practices.length * practiceBlockH;
+                    contentH = day.practices.length * practiceLineH;
                 } else {
-                    contentH = minRowContentH;
+                    contentH = practiceLineH;
                 }
-                day.rowHeight = dayHeaderH + contentH + rowPadding;
+                day.rowHeight = Math.max(minRowH, contentH + rowPadding);
             });
 
             const totalRowsHeight = days.reduce((sum, d) => sum + d.rowHeight, 0);
@@ -2035,42 +2034,51 @@
 
             // שורות הימים
             let y = headerHeight;
+            const dayNameX = width - 55;
+            const contentRightX = width - 145;
+            const dateX = 55;
+
             days.forEach((day, index) => {
                 const rowH = day.rowHeight;
                 const isEven = index % 2 === 0;
+                const rowBoxH = rowH - 8;
+                const centerY = y + rowBoxH / 2;
 
                 ctx.fillStyle = isEven ? '#1e293b' : '#0f172a';
-                ctx.fillRect(30, y, width - 60, rowH - 8);
+                ctx.fillRect(30, y, width - 60, rowBoxH);
 
-                // שם היום + תאריך (למעלה בצד ימין - RTL)
+                // שם היום (מימין, ממורכז אנכית)
                 ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 22px Arial';
+                ctx.font = 'bold 20px Arial';
                 ctx.textAlign = 'right';
-                ctx.fillText(`יום ${day.weekdayName}`, width - 55, y + 26);
+                ctx.fillText(`יום ${day.weekdayName}`, dayNameX, centerY + 7);
 
+                // תאריך (משמאל, ממורכז אנכית)
                 ctx.fillStyle = '#94a3b8';
                 ctx.font = '15px Arial';
-                ctx.fillText(`${day.date.getDate()}/${day.date.getMonth() + 1}`, width - 55, y + 46);
-
-                // פרטי אימונים (בצד שמאל)
                 ctx.textAlign = 'left';
+                ctx.fillText(`${day.date.getDate()}/${day.date.getMonth() + 1}`, dateX, centerY + 5);
+
+                // תוכן (מיושר לימין בעמודה קבועה, ממורכז אנכית כבלוק)
+                ctx.textAlign = 'right';
                 if (day.holiday) {
                     ctx.fillStyle = '#facc15';
-                    ctx.font = 'bold 20px Arial';
-                    ctx.fillText(`🎌 ${day.holiday.name} - אין אימון`, 55, y + 40);
+                    ctx.font = 'bold 18px Arial';
+                    ctx.fillText(`🎌 ${day.holiday.name} - אין אימון`, contentRightX, centerY + 6);
                 } else if (day.practices.length > 0) {
-                    day.practices.forEach((p, pIndex) => {
-                        const blockY = dayHeaderH + (pIndex * practiceBlockH);
+                    const blockH = day.practices.length * practiceLineH;
+                    const blockStartY = centerY - (blockH / 2) + (practiceLineH / 2) + 6;
 
+                    day.practices.forEach((p, pIndex) => {
                         ctx.fillStyle = '#ffffff';
-                        ctx.font = 'bold 18px Arial';
+                        ctx.font = 'bold 17px Arial';
                         const line = `${p.title || 'אימון'}  •  ${formatTimeRange(p)}${p.location ? '  •  ' + p.location : ''}`;
-                        ctx.fillText(line, 55, y + blockY + 18);
+                        ctx.fillText(line, contentRightX, blockStartY + (pIndex * practiceLineH));
                     });
                 } else {
                     ctx.fillStyle = '#475569';
-                    ctx.font = '18px Arial';
-                    ctx.fillText('אין אימון', 55, y + 40);
+                    ctx.font = '17px Arial';
+                    ctx.fillText('אין אימון', contentRightX, centerY + 6);
                 }
 
                 y += rowH;
