@@ -1968,22 +1968,55 @@
             }
 
             const weekEnd = days[6].date;
-            const rangeText = `${weekStart.getDate()}/${weekStart.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}/${weekEnd.getFullYear()}`;
+            const rangeText = `${weekStart.getDate()}/${weekStart.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}`;
 
-            // --- חישוב גובה דינמי לכל יום (בהתאם לכמות האימונים בו) ---
+            function getPracticeLineText(p) {
+                return `${p.title || 'אימון'}  •  ${formatTimeRange(p)}${p.location ? '  •  ' + p.location : ''}`;
+            }
+
+            function wrapCanvasText(measureCtx, text, maxWidth) {
+                const words = text.split(' ');
+                const lines = [];
+                let currentLine = '';
+                for (const word of words) {
+                    const testLine = currentLine ? currentLine + ' ' + word : word;
+                    if (measureCtx.measureText(testLine).width > maxWidth && currentLine) {
+                        lines.push(currentLine);
+                        currentLine = word;
+                    } else {
+                        currentLine = testLine;
+                    }
+                }
+                if (currentLine) lines.push(currentLine);
+                return lines.length ? lines : [''];
+            }
+
+            // --- חישוב גובה דינמי לכל יום (בהתאם לכמות שורות התוכן בפועל, כולל גלישה) ---
             const width = 800;
             const headerHeight = 190;
             const footerHeight = 50;
             const practiceLineH = 30;
             const minRowH = 62;
             const rowPadding = 18;
+            const contentRightX = width - 145;
+            const contentMaxWidth = contentRightX - 100;
+
+            const measureCanvas = document.createElement('canvas');
+            const measureCtx = measureCanvas.getContext('2d');
+            measureCtx.font = 'bold 17px Arial';
 
             days.forEach(day => {
                 let contentH;
                 if (day.holiday) {
                     contentH = practiceLineH;
                 } else if (day.practices.length > 0) {
-                    contentH = day.practices.length * practiceLineH;
+                    let totalLines = 0;
+                    day.practices.forEach(p => {
+                        const lines = wrapCanvasText(measureCtx, getPracticeLineText(p), contentMaxWidth);
+                        p.__lines = lines;
+                        totalLines += lines.length;
+                    });
+                    contentH = totalLines * practiceLineH;
                 } else {
                     contentH = practiceLineH;
                 }
@@ -2017,7 +2050,7 @@
             // ברכה
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 26px Arial';
-            ctx.fillText('שבוע טוב לכולם! 🏀', width / 2, 105);
+            ctx.fillText('שבוע טוב לכולם!', width / 2, 105);
 
             // טווח השבוע
             ctx.fillStyle = '#94a3b8';
@@ -2035,7 +2068,6 @@
             // שורות הימים
             let y = headerHeight;
             const dayNameX = width - 55;
-            const contentRightX = width - 145;
             const dateX = 55;
 
             days.forEach((day, index) => {
@@ -2059,21 +2091,21 @@
                 ctx.textAlign = 'left';
                 ctx.fillText(`${day.date.getDate()}/${day.date.getMonth() + 1}`, dateX, centerY + 5);
 
-                // תוכן (מיושר לימין בעמודה קבועה, ממורכז אנכית כבלוק)
+                // תוכן (מיושר לימין באותה עמודה קבועה - כולל שורות שגלשו)
                 ctx.textAlign = 'right';
                 if (day.holiday) {
                     ctx.fillStyle = '#facc15';
                     ctx.font = 'bold 18px Arial';
                     ctx.fillText(`🎌 ${day.holiday.name} - אין אימון`, contentRightX, centerY + 6);
                 } else if (day.practices.length > 0) {
-                    const blockH = day.practices.length * practiceLineH;
+                    const allLines = day.practices.flatMap(p => p.__lines || [getPracticeLineText(p)]);
+                    const blockH = allLines.length * practiceLineH;
                     const blockStartY = centerY - (blockH / 2) + (practiceLineH / 2) + 6;
 
-                    day.practices.forEach((p, pIndex) => {
-                        ctx.fillStyle = '#ffffff';
-                        ctx.font = 'bold 17px Arial';
-                        const line = `${p.title || 'אימון'}  •  ${formatTimeRange(p)}${p.location ? '  •  ' + p.location : ''}`;
-                        ctx.fillText(line, contentRightX, blockStartY + (pIndex * practiceLineH));
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 17px Arial';
+                    allLines.forEach((line, lineIndex) => {
+                        ctx.fillText(line, contentRightX, blockStartY + (lineIndex * practiceLineH));
                     });
                 } else {
                     ctx.fillStyle = '#475569';
