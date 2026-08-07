@@ -1998,7 +1998,7 @@
             const practiceLineH = 30;
             const minRowH = 62;
             const rowPadding = 18;
-            const contentRightX = width - 145;
+            const contentRightX = width - 195;
             const contentMaxWidth = contentRightX - 100;
 
             const measureCanvas = document.createElement('canvas');
@@ -2055,7 +2055,7 @@
             // טווח השבוע
             ctx.fillStyle = '#94a3b8';
             ctx.font = '20px Arial';
-            ctx.fillText(`לוז שבועי: ${rangeText}`, width / 2, 140);
+            ctx.fillText(`לוז שבועי: \u202D${rangeText}\u202C`, width / 2, 140);
 
             // קו הפרדה
             ctx.strokeStyle = '#334155';
