@@ -912,20 +912,16 @@
                     <input type="text" id="practice-location-input" placeholder="למשל: אולם הספורט העירוני">
                 </div>
 
-                <label>סוג מגרש:</label>
-                <div style="display: flex; gap: 10px; margin: 8px 0 15px 0;">
-                    <button class="court-type-btn" id="btn-half" onclick="setCourtType('half')">חצי מגרש</button>
-                    <button class="court-type-btn" id="btn-full" onclick="setCourtType('full')">מגרש שלם</button>
-                </div>
-
                 <div class="form-group">
                     <label>הערות ודגשים לאימון/תרגיל:</label>
                     <textarea id="practice-notes-input" placeholder="רשום הערות, תרגילים, מטרות..."></textarea>
                 </div>
+            </div>
 
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button class="btn" style="flex: 1;" onclick="openDrawingBoardForCurrentPractice()">פתח לוח שרטוט טקטי 🎨</button>
-                </div>
+            <div class="card" style="margin-top:15px;">
+                <h3 style="color:var(--primary); margin-bottom:10px;">🎨 תרגילים באימון זה</h3>
+                <div id="practice-exercises-list"></div>
+                <button class="btn" style="width:100%; margin-top:10px;" onclick="addNewExercise()">➕ הוסף תרגיל חדש</button>
             </div>
 
             <div class="actions-row">
@@ -936,10 +932,22 @@
             <button class="btn btn-secondary" onclick="openDayPractices(selectedPracticeDateStr)">חזרה לרשימת אימוני היום</button>
         </div>
 
-        <!-- לוח שרטוט טקטי -->
+        <!-- לוח שרטוט טקטי (לתרגיל בודד בתוך האימון) -->
         <div id="view-court" class="view">
             <h2 id="court-title">שרטוט טקטי</h2>
-            
+
+            <div class="card" style="padding: 12px;">
+                <div class="form-group">
+                    <label>שם התרגיל:</label>
+                    <input type="text" id="exercise-title-input" placeholder="למשל: ריצת חימום / תרגיל 2 נגד 1">
+                </div>
+                <label>סוג מגרש:</label>
+                <div style="display: flex; gap: 10px; margin: 8px 0 0 0;">
+                    <button class="court-type-btn" id="btn-ex-half" onclick="setExerciseCourtType('half')">חצי מגרש</button>
+                    <button class="court-type-btn" id="btn-ex-full" onclick="setExerciseCourtType('full')">מגרש שלם</button>
+                </div>
+            </div>
+
             <div class="card" style="padding: 12px; background: #0f172a; border-color: var(--primary);">
                 <label style="color: var(--primary); font-size: 0.95rem;">📝 הערות האימון (משתנכרן בזמן אמת):</label>
                 <textarea id="court-synced-notes" oninput="syncNotesToPractice(this.value)" placeholder="כתוב הערות כאן והן יופיעו גם בפרטי האימון..." style="margin-top: 6px; min-height: 60px;"></textarea>
@@ -972,7 +980,7 @@
             </div>
 
             <div class="actions-row">
-                <button class="btn" onclick="savePracticeData(true)">שמור וחזור לאימון</button>
+                <button class="btn" onclick="saveExerciseData()">שמור וחזור לאימון</button>
                 <button class="btn btn-secondary" onclick="showView('view-practice-edit')">חזרה לעריכת אימון</button>
             </div>
         </div>
@@ -1921,7 +1929,7 @@
                         <div>
                             <h3 style="color:${teamColor};">${p.title || 'אימון'} ${p.isRecurringVirtual ? '<span style="font-size:0.7rem; color:var(--text-muted);">🔁 קבוע</span>' : ''}</h3>
                             ${(p.time || p.location) ? `<p style="font-size:0.9rem; color:var(--info); font-weight:bold;">${p.time ? '🕒 ' + formatTimeRange(p) : ''}${p.time && p.location ? ' • ' : ''}${p.location ? '📍 ' + p.location : ''}</p>` : ''}
-                            <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${p.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
+                            ${(p.exercises && p.exercises.length > 0) ? `<p style="font-size:0.85rem; color:var(--text-muted);">🎨 ${p.exercises.length} תרגילים</p>` : ''}
                         </div>
                     `;
                     item.onclick = () => openDayPractices(dateKey);
@@ -2480,7 +2488,6 @@
                         <div>
                             <h3 style="color:var(--primary);">${practice.title} <span style="font-size:0.7rem; color:var(--text-muted);">🔁 אימון קבוע</span></h3>
                             ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + formatTimeRange(practice) : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
-                            <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${practice.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
                         </div>
                     </div>
                     <div class="practice-actions-row">
@@ -2499,7 +2506,7 @@
                         <div>
                             <h3 style="color:var(--primary);">${practice.title || 'תרגיל ' + (index + 1)}</h3>
                             ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + formatTimeRange(practice) : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
-                            <p style="font-size:0.85rem; color:var(--text-muted);">מגרש: ${practice.type === 'half' ? 'חצי מגרש' : 'מגרש שלם'}</p>
+                            ${(practice.exercises && practice.exercises.length > 0) ? `<p style="font-size:0.85rem; color:var(--text-muted);">🎨 ${practice.exercises.length} תרגילים</p>` : ''}
                             <p style="font-size:0.85rem; margin-top:4px;">${practice.notes ? practice.notes.substring(0, 50) + '...' : 'ללא הערות'}</p>
                         </div>
                     </div>
@@ -2525,12 +2532,11 @@
             team.practices[dateKey].push({
                 id: newId,
                 title: rule.title,
-                type: rule.type || 'half',
                 time: rule.time || '',
                 endTime: rule.endTime || '',
                 location: rule.location || '',
                 notes: '',
-                canvasImg: null,
+                exercises: [],
                 sourceRecurringId: recurringId
             });
 
@@ -2571,12 +2577,11 @@
             const newPractice = {
                 id: newId,
                 title: `תרגיל / אימון ${count}`,
-                type: 'half',
                 time: '',
                 endTime: '',
                 location: '',
                 notes: '',
-                canvasImg: null
+                exercises: []
             };
 
             team.practices[selectedPracticeDateStr].push(newPractice);
@@ -2609,15 +2614,21 @@
                 `${practiceToCopy.title || 'תרגיל'} (עותק)` : 
                 (practiceToCopy.title || 'תרגיל מועתק');
 
+            migratePracticeToExercises(practiceToCopy);
+
             const duplicatedPractice = {
                 id: 'prc_' + Date.now(),
                 title: newTitle,
-                type: practiceToCopy.type,
                 time: practiceToCopy.time || '',
                 endTime: practiceToCopy.endTime || '',
                 location: practiceToCopy.location || '',
                 notes: practiceToCopy.notes || '',
-                canvasImg: practiceToCopy.canvasImg || null
+                exercises: (practiceToCopy.exercises || []).map(ex => ({
+                    id: 'ex_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                    title: ex.title,
+                    type: ex.type || 'half',
+                    canvasImg: ex.canvasImg || null
+                }))
             };
 
             team.practices[targetDate].push(duplicatedPractice);
@@ -2630,6 +2641,25 @@
             }
         }
 
+        let selectedExerciseId = null;
+
+        function migratePracticeToExercises(practice) {
+            // תאימות לאחור: אימון ישן עם שרטוט בודד ברמת האימון -> הופך לתרגיל ראשון ברשימה
+            if (!Array.isArray(practice.exercises)) {
+                practice.exercises = [];
+                if (practice.canvasImg) {
+                    practice.exercises.push({
+                        id: 'ex_legacy_' + Date.now(),
+                        title: 'תרגיל 1',
+                        type: practice.type || 'half',
+                        canvasImg: practice.canvasImg
+                    });
+                }
+                delete practice.canvasImg;
+                delete practice.type;
+            }
+        }
+
         function editPractice(practiceId) {
             selectedPracticeId = practiceId;
             const team = getCurrentTeam();
@@ -2639,21 +2669,92 @@
             const practice = list.find(p => p.id === practiceId);
             if (!practice) return;
 
+            migratePracticeToExercises(practice);
+
             document.getElementById('practice-edit-title').innerText = `עריכת תרגיל לתאריך ${selectedPracticeDateStr}`;
             document.getElementById('practice-title-input').value = practice.title || '';
             document.getElementById('practice-time-input').value = practice.time || '';
             document.getElementById('practice-endtime-input').value = practice.endTime || '';
             document.getElementById('practice-location-input').value = practice.location || '';
-            setCourtType(practice.type || 'half');
             document.getElementById('practice-notes-input').value = practice.notes || '';
 
+            renderExercisesList();
             showView('view-practice-edit');
         }
 
-        function setCourtType(type) {
+        function renderExercisesList() {
+            const container = document.getElementById('practice-exercises-list');
+            if (!container) return;
+
+            const team = getCurrentTeam();
+            let list = team.practices[selectedPracticeDateStr] || [];
+            if (!Array.isArray(list)) list = [list];
+            const practice = list.find(p => p.id === selectedPracticeId);
+            if (!practice) return;
+
+            migratePracticeToExercises(practice);
+
+            if (practice.exercises.length === 0) {
+                container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">אין עדיין תרגילים באימון זה. לחץ "הוסף תרגיל חדש" כדי להתחיל.</p>';
+                return;
+            }
+
+            container.innerHTML = practice.exercises.map((ex, index) => `
+                <div class="note-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <div>
+                            <strong>${ex.title || 'תרגיל ' + (index + 1)}</strong>
+                            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">${ex.canvasImg ? '🎨 יש שרטוט' : 'ללא שרטוט עדיין'}</p>
+                        </div>
+                        <div style="display:flex; gap:6px; flex-shrink:0;">
+                            <button class="btn btn-secondary" style="padding:6px 10px; font-size:0.8rem;" onclick="openExerciseEditor('${ex.id}')">✏️ ערוך</button>
+                            <button class="btn btn-danger" style="padding:6px 10px; font-size:0.8rem;" onclick="deleteExercise('${ex.id}')">🗑️</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addNewExercise() {
+            const team = getCurrentTeam();
+            let list = team.practices[selectedPracticeDateStr] || [];
+            if (!Array.isArray(list)) list = [list];
+            const practice = list.find(p => p.id === selectedPracticeId);
+            if (!practice) return;
+
+            migratePracticeToExercises(practice);
+
+            const newExercise = {
+                id: 'ex_' + Date.now(),
+                title: `תרגיל ${practice.exercises.length + 1}`,
+                type: 'half',
+                canvasImg: null
+            };
+            practice.exercises.push(newExercise);
+            saveState();
+            renderExercisesList();
+
+            openExerciseEditor(newExercise.id);
+        }
+
+        function deleteExercise(exerciseId) {
+            if (!confirm('למחוק את התרגיל הזה? השרטוט שלו יימחק לצמיתות.')) return;
+
+            const team = getCurrentTeam();
+            let list = team.practices[selectedPracticeDateStr] || [];
+            if (!Array.isArray(list)) list = [list];
+            const practice = list.find(p => p.id === selectedPracticeId);
+            if (!practice) return;
+
+            practice.exercises = (practice.exercises || []).filter(e => e.id !== exerciseId);
+            saveState();
+            renderExercisesList();
+        }
+
+        function setExerciseCourtType(type) {
             currentCourtType = type;
-            document.getElementById('btn-half').classList.toggle('selected', type === 'half');
-            document.getElementById('btn-full').classList.toggle('selected', type === 'full');
+            document.getElementById('btn-ex-half').classList.toggle('selected', type === 'half');
+            document.getElementById('btn-ex-full').classList.toggle('selected', type === 'full');
         }
 
         function savePracticeData(backToPracticeEdit = false) {
@@ -2667,18 +2768,14 @@
 
             if (practice) {
                 practice.title = document.getElementById('practice-title-input').value.trim() || 'אימון';
-                practice.type = currentCourtType;
                 practice.time = document.getElementById('practice-time-input').value;
                 practice.endTime = document.getElementById('practice-endtime-input').value;
                 practice.location = document.getElementById('practice-location-input').value.trim();
                 practice.notes = document.getElementById('practice-notes-input').value;
-                if (canvas) {
-                    practice.canvasImg = canvas.toDataURL();
-                }
             }
 
             saveState();
-            alert('התרגיל/האימון נשמר!');
+            alert('האימון נשמר!');
 
             if (backToPracticeEdit) {
                 showView('view-practice-edit');
@@ -2705,28 +2802,66 @@
             openDayPractices(selectedPracticeDateStr);
         }
 
-        // לוח שרטוט
-        function openDrawingBoardForCurrentPractice() {
+        // לוח שרטוט - עריכת תרגיל בודד בתוך האימון
+        function openExerciseEditor(exerciseId) {
+            selectedExerciseId = exerciseId;
             showView('view-court');
+
             const team = getCurrentTeam();
             let list = team.practices[selectedPracticeDateStr] || [];
             if (!Array.isArray(list)) list = [list];
-
             const practice = list.find(p => p.id === selectedPracticeId);
+            if (!practice) return;
 
-            document.getElementById('court-title').innerText = `שרטוט - ${practice ? practice.title : 'תרגיל'}`;
-            document.getElementById('court-synced-notes').value = practice ? (practice.notes || '') : '';
+            migratePracticeToExercises(practice);
+            const exercise = practice.exercises.find(e => e.id === exerciseId);
+            if (!exercise) return;
+
+            document.getElementById('court-title').innerText = `שרטוט - ${practice.title || 'אימון'}`;
+            document.getElementById('exercise-title-input').value = exercise.title || '';
+            document.getElementById('court-synced-notes').value = practice.notes || '';
+            setExerciseCourtType(exercise.type || 'half');
 
             drawCourtBackground();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            if (practice && practice.canvasImg) {
+            if (exercise.canvasImg) {
                 const img = new Image();
                 img.onload = function() {
                     ctx.drawImage(img, 0, 0);
                 };
-                img.src = practice.canvasImg;
+                img.src = exercise.canvasImg;
             }
+        }
+
+        function saveExerciseData() {
+            const team = getCurrentTeam();
+            if (!team || !selectedPracticeDateStr || !selectedPracticeId || !selectedExerciseId) return;
+
+            let list = team.practices[selectedPracticeDateStr] || [];
+            if (!Array.isArray(list)) list = [list];
+            const practice = list.find(p => p.id === selectedPracticeId);
+            if (!practice) return;
+
+            migratePracticeToExercises(practice);
+            const exercise = practice.exercises.find(e => e.id === selectedExerciseId);
+
+            if (exercise) {
+                exercise.title = document.getElementById('exercise-title-input').value.trim() || exercise.title || 'תרגיל';
+                exercise.type = currentCourtType;
+                if (canvas) {
+                    exercise.canvasImg = canvas.toDataURL();
+                }
+            }
+
+            // סנכרון הערות האימון הכלליות גם אם נערכו מתוך מסך השרטוט
+            practice.notes = document.getElementById('court-synced-notes').value;
+
+            saveState();
+            alert('התרגיל נשמר!');
+
+            showView('view-practice-edit');
+            renderExercisesList();
         }
 
         function syncNotesToPractice(val) {
