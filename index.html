@@ -2131,7 +2131,7 @@
 
                 const fileName = `לוז-${team.name}-${rangeText.replace(/\//g, '-')}.png`;
                 const file = new File([blob], fileName, { type: 'image/png' });
-                const shareText = `שבוע טוב לכולם! 🏀\nהנה הלוז השבועי של ${team.name} (${rangeText}):`;
+                const shareText = `שבוע טוב לכולם! 🏀\nהלו"ז השבועי (\u202D${rangeText}\u202C):`;
 
                 if (navigator.canShare && navigator.canShare({ files: [file] })) {
                     try {
