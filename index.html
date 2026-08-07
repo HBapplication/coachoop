@@ -2506,7 +2506,15 @@
                         <div>
                             <h3 style="color:var(--primary);">${practice.title || 'תרגיל ' + (index + 1)}</h3>
                             ${(practice.time || practice.location) ? `<p style="font-size:0.9rem; color:var(--info); margin-top:2px; font-weight:bold;">${practice.time ? '🕒 ' + formatTimeRange(practice) : ''}${practice.time && practice.location ? ' • ' : ''}${practice.location ? '📍 ' + practice.location : ''}</p>` : ''}
-                            ${(practice.exercises && practice.exercises.length > 0) ? `<p style="font-size:0.85rem; color:var(--text-muted);">🎨 ${practice.exercises.length} תרגילים</p>` : ''}
+                            ${(practice.exercises && practice.exercises.length > 0) ? `
+                                <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:6px;">
+                                    ${practice.exercises.map(ex => `
+                                        <span onclick="event.stopPropagation(); openExerciseFromDayList('${practice.id}', '${ex.id}')" style="cursor:pointer; background:#0f172a; border:1px solid var(--border-color); border-radius:6px; padding:4px 10px; font-size:0.8rem; color:var(--info);">
+                                            🎨 ${ex.title || 'תרגיל'}
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
                             <p style="font-size:0.85rem; margin-top:4px;">${practice.notes ? practice.notes.substring(0, 50) + '...' : 'ללא הערות'}</p>
                         </div>
                     </div>
@@ -2803,6 +2811,11 @@
         }
 
         // לוח שרטוט - עריכת תרגיל בודד בתוך האימון
+        function openExerciseFromDayList(practiceId, exerciseId) {
+            editPractice(practiceId);
+            openExerciseEditor(exerciseId);
+        }
+
         function openExerciseEditor(exerciseId) {
             selectedExerciseId = exerciseId;
             showView('view-court');
