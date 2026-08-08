@@ -1314,13 +1314,15 @@
                 // משתמשים ב-redirect ולא ב-popup: פופ-אפים נכשלים בשקט בדפדפנים שחוסמים
                 // תקשורת בין חלונות (third-party storage) בין הדומיין של האתר לדומיין של Firebase Auth.
                 // redirect לא תלוי בתקשורת הזו ולכן אמין הרבה יותר.
-                localStorage.setItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY, 'true');
+                // שומרים חותמת זמן (לא רק 'true') כדי שאם משהו ישתבש ולא נחזור מ-Google בכלל,
+                // הדגל "יפוג" מעצמו ולא יגרום להתראות שווא בטעינות עתידיות של האפליקציה.
+                localStorage.setItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY, String(Date.now()));
                 await auth.signInWithRedirect(provider);
                 // הדף ינווט מחדש לגוגל ובחזרה - הקוד שאחרי זה לא ימשיך לרוץ באותה טעינה
             } catch (e) {
                 console.error('שגיאה בחיבור ליומן Google:', e);
                 localStorage.removeItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY);
-                alert('החיבור ליומן נכשל. ודא שאישרת את בקשת ההרשאה ונסה שוב.');
+                alert('החיבור ליומן נכשל: ' + (e && e.code ? e.code : e));
             }
         }
 
@@ -1344,10 +1346,14 @@
         }
 
         async function handleGoogleRedirectResult() {
-            const wasManualConnect = localStorage.getItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY) === 'true';
+            const pendingRaw = localStorage.getItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY);
             localStorage.removeItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY);
+            // דגל "פג תוקף" נחשב כלא-רלוונטי, כדי שניסיון תקוע מהעבר לא יגרום להתראת שווא
+            // בטעינה נקייה חדשה של האפליקציה (עד 3 דקות מהלחיצה על "חבר יומן")
+            const wasManualConnect = !!pendingRaw && (Date.now() - parseInt(pendingRaw, 10)) < 3 * 60 * 1000;
             try {
                 const result = await auth.getRedirectResult();
+                console.log('[Coachoop] תוצאת getRedirectResult:', result);
                 if (result && result.user) {
                     const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
                     if (credential && credential.accessToken) {
@@ -1360,15 +1366,17 @@
                             pendingCalendarConnectSuccess = true;
                         }
                     } else if (wasManualConnect) {
-                        alert('החיבור ליומן לא הושלם - נסה שוב.');
+                        console.warn('[Coachoop] getRedirectResult החזיר משתמש אבל בלי credential/accessToken תקין:', result);
+                        alert('החיבור ליומן לא הושלם (לא התקבל טוקן גישה) - נסה שוב.');
                     }
                 } else if (wasManualConnect) {
-                    alert('החיבור ליומן לא הושלם - נסה שוב.');
+                    console.warn('[Coachoop] getRedirectResult לא החזיר תוצאה כלל (result=null) אחרי redirect מ-Google.');
+                    alert('החיבור ליומן לא הושלם (לא זוהתה חזרה מגוגל) - נסה שוב.');
                 }
             } catch (e) {
-                console.warn('שגיאה בקבלת תוצאת חיבור ליומן:', e);
+                console.error('[Coachoop] שגיאה בקבלת תוצאת חיבור ליומן:', e, e && e.code);
                 if (wasManualConnect) {
-                    alert('החיבור ליומן נכשל. ודא שאישרת את בקשת ההרשאה ונסה שוב.');
+                    alert('החיבור ליומן נכשל: ' + (e && e.code ? e.code : e));
                 }
             }
         }
