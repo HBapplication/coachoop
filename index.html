@@ -1148,6 +1148,10 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <!-- Google Identity Services: משמש עבור חיבור יומן Google בלבד (לא להתחברות הבסיסית לאפליקציה).
+         עובד ישירות מול גוגל בלי תלות ב-authDomain של Firebase, ולכן אמין גם כשהאתר מתארח
+         בדומיין שונה (כמו GitHub Pages) מזה של פרויקט ה-Firebase. -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <script>
         // ========================================================
@@ -1204,8 +1208,6 @@
         window.onload = async function() {
             initCanvas();
             document.getElementById('new-note-date').valueAsDate = new Date();
-
-            await handleGoogleRedirectResult();
 
             auth.onAuthStateChanged(async (user) => {
                 if (user) {
@@ -1297,33 +1299,80 @@
         }
 
         const CALENDAR_AUTOCONNECT_KEY = 'coachoop_calendar_autoconnect';
-        // דגל זמני שמסמן שהמשתמש לחץ באופן יזום על "חבר יומן Google" (בניגוד לחיבור אוטומטי שקט ברקע),
-        // כדי שאחרי החזרה מ-Google (redirect) נדע אם להציג הודעת הצלחה/כישלון או לא
-        const CALENDAR_MANUAL_CONNECT_PENDING_KEY = 'coachoop_calendar_manual_connect_pending';
+
+        // ============================================================
+        // חיבור יומן Google - Google Identity Services (GIS)
+        // ============================================================
+        // משתמשים ב-GIS ולא ב-signInWithPopup/signInWithRedirect של Firebase Auth,
+        // כי Firebase Auth מתווך את ההרשאה דרך ה-authDomain שלו (coachoop-62dbf.firebaseapp.com),
+        // שהוא דומיין שונה מהדומיין שבו מתארחת האפליקציה בפועל (GitHub Pages) - ודפדפנים
+        // חוסמים היום את התקשורת חוצה-הדומיינים שהמנגנון הזה צריך. GIS עובד ישירות מול גוגל
+        // בלי "מתווך" כזה, ולכן לא נתקל באותה בעיה.
+        //
+        // חשוב: יש להחליף את הערך למטה במזהה הלקוח (Client ID) האמיתי של הפרויקט.
+        // איך למצוא אותו: Firebase Console -> Authentication -> Sign-in method -> Google
+        // -> "Web SDK configuration" -> Web client ID (מסתיים תמיד ב-.apps.googleusercontent.com).
+        const GOOGLE_OAUTH_CLIENT_ID = '26688648277-npj19ldcasq6dnn8hdvhh7ukm28ljr8q.apps.googleusercontent.com';
+
+        let googleTokenClient = null;
+
+        function getGoogleTokenClient() {
+            if (googleTokenClient) return googleTokenClient;
+            if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+                return null; // הספרייה של גוגל עוד לא נטענה מהרשת
+            }
+            googleTokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_OAUTH_CLIENT_ID,
+                scope: GOOGLE_CALENDAR_SCOPE,
+                callback: (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) {
+                        googleCalendarAccessToken = tokenResponse.access_token;
+                        localStorage.setItem(CALENDAR_AUTOCONNECT_KEY, 'true');
+                        updateGoogleCalendarStatusUI();
+                        if (pendingManualCalendarConnect) {
+                            pendingManualCalendarConnect = false;
+                            backfillSyncAllToGoogleCalendar().then(() => {
+                                alert('היומן חובר וסונכרן בהצלחה! כל האימונים הקבועים, החד-פעמיים והחגים שכבר קיימים באפליקציה נוספו ליומן שלך. מעכשיו החיבור יתחדש אוטומטית בכל פעם שתפתח את Coachoop במכשיר הזה, וכל שינוי חדש יסתנכרן תוך שניות.');
+                            });
+                        }
+                    } else if (pendingManualCalendarConnect) {
+                        pendingManualCalendarConnect = false;
+                        console.warn('[Coachoop] GIS לא החזיר access_token:', tokenResponse);
+                        alert('החיבור ליומן לא הושלם - נסה שוב.');
+                    }
+                },
+                error_callback: (err) => {
+                    console.error('[Coachoop] שגיאת GIS בחיבור ליומן:', err);
+                    if (pendingManualCalendarConnect) {
+                        pendingManualCalendarConnect = false;
+                        if (err && err.type === 'popup_closed') {
+                            // המשתמש סגר את החלון בעצמו - לא מציגים שגיאה
+                        } else {
+                            alert('החיבור ליומן נכשל: ' + (err && err.type ? err.type : 'שגיאה לא ידועה') + '. אם זו הפעם הראשונה, ודא ש-Client ID הוגדר נכון בקוד.');
+                        }
+                    }
+                }
+            });
+            return googleTokenClient;
+        }
 
         function isCalendarAutoConnectEnabled() {
             return localStorage.getItem(CALENDAR_AUTOCONNECT_KEY) === 'true';
         }
 
-        async function connectGoogleCalendar() {
-            try {
-                const provider = new firebase.auth.GoogleAuthProvider();
-                provider.addScope(GOOGLE_CALENDAR_SCOPE);
-                // מאלץ את Google להציג תמיד את מסך ההרשאה ולהחזיר טוקן גישה טרי
-                provider.setCustomParameters({ prompt: 'consent' });
-                // משתמשים ב-redirect ולא ב-popup: פופ-אפים נכשלים בשקט בדפדפנים שחוסמים
-                // תקשורת בין חלונות (third-party storage) בין הדומיין של האתר לדומיין של Firebase Auth.
-                // redirect לא תלוי בתקשורת הזו ולכן אמין הרבה יותר.
-                // שומרים חותמת זמן (לא רק 'true') כדי שאם משהו ישתבש ולא נחזור מ-Google בכלל,
-                // הדגל "יפוג" מעצמו ולא יגרום להתראות שווא בטעינות עתידיות של האפליקציה.
-                localStorage.setItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY, String(Date.now()));
-                await auth.signInWithRedirect(provider);
-                // הדף ינווט מחדש לגוגל ובחזרה - הקוד שאחרי זה לא ימשיך לרוץ באותה טעינה
-            } catch (e) {
-                console.error('שגיאה בחיבור ליומן Google:', e);
-                localStorage.removeItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY);
-                alert('החיבור ליומן נכשל: ' + (e && e.code ? e.code : e));
+        // דגל שמסמן שהמשתמש עצמו לחץ על "חבר יומן Google" (בניגוד לניסיון שקט ברקע),
+        // כדי שנדע אם להציג הודעת הצלחה/כישלון או לא
+        let pendingManualCalendarConnect = false;
+
+        function connectGoogleCalendar() {
+            const client = getGoogleTokenClient();
+            if (!client) {
+                alert('שירות ההתחברות של Google עדיין נטען. נסה שוב בעוד שנייה-שתיים.');
+                return;
             }
+            pendingManualCalendarConnect = true;
+            // prompt: 'consent' מאלץ הצגת מסך הרשאה מלא ומחזיר טוקן טרי בכל פעם
+            client.requestAccessToken({ prompt: 'consent' });
         }
 
         function disconnectGoogleCalendarAutoConnect() {
@@ -1333,52 +1382,17 @@
             updateGoogleCalendarStatusUI();
         }
 
-        async function tryAutoConnectGoogleCalendar() {
+        function tryAutoConnectGoogleCalendar(retriesLeft) {
+            if (retriesLeft === undefined) retriesLeft = 10;
             if (!isCalendarAutoConnectEnabled() || googleCalendarAccessToken) return;
-            try {
-                const provider = new firebase.auth.GoogleAuthProvider();
-                provider.addScope(GOOGLE_CALENDAR_SCOPE);
-                await auth.signInWithRedirect(provider);
-                // הדף ינווט מחדש לגוגל ובחזרה - הקוד שאחרי זה לא ימשיך לרוץ באותה טעינה
-            } catch (e) {
-                console.warn('חיבור אוטומטי ליומן נכשל:', e);
+            const client = getGoogleTokenClient();
+            if (!client) {
+                // ספריית GIS נטענת אסינכרונית (async defer) - ייתכן שעוד לא הגיעה, ננסה שוב בעוד רגע
+                if (retriesLeft > 0) setTimeout(() => tryAutoConnectGoogleCalendar(retriesLeft - 1), 500);
+                return;
             }
-        }
-
-        async function handleGoogleRedirectResult() {
-            const pendingRaw = localStorage.getItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY);
-            localStorage.removeItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY);
-            // דגל "פג תוקף" נחשב כלא-רלוונטי, כדי שניסיון תקוע מהעבר לא יגרום להתראת שווא
-            // בטעינה נקייה חדשה של האפליקציה (עד 3 דקות מהלחיצה על "חבר יומן")
-            const wasManualConnect = !!pendingRaw && (Date.now() - parseInt(pendingRaw, 10)) < 3 * 60 * 1000;
-            try {
-                const result = await auth.getRedirectResult();
-                console.log('[Coachoop] תוצאת getRedirectResult:', result);
-                if (result && result.user) {
-                    const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
-                    if (credential && credential.accessToken) {
-                        googleCalendarAccessToken = credential.accessToken;
-                        localStorage.setItem(CALENDAR_AUTOCONNECT_KEY, 'true');
-                        updateGoogleCalendarStatusUI();
-                        if (wasManualConnect) {
-                            // הקבוצות עוד לא נטענו מ-Firestore בשלב הזה (הדף רק עלה מחדש) -
-                            // נדחה את הסנכרון וההודעה לרגע שבו subscribeToTeams תסיים לטעון אותן
-                            pendingCalendarConnectSuccess = true;
-                        }
-                    } else if (wasManualConnect) {
-                        console.warn('[Coachoop] getRedirectResult החזיר משתמש אבל בלי credential/accessToken תקין:', result);
-                        alert('החיבור ליומן לא הושלם (לא התקבל טוקן גישה) - נסה שוב.');
-                    }
-                } else if (wasManualConnect) {
-                    console.warn('[Coachoop] getRedirectResult לא החזיר תוצאה כלל (result=null) אחרי redirect מ-Google.');
-                    alert('החיבור ליומן לא הושלם (לא זוהתה חזרה מגוגל) - נסה שוב.');
-                }
-            } catch (e) {
-                console.error('[Coachoop] שגיאה בקבלת תוצאת חיבור ליומן:', e, e && e.code);
-                if (wasManualConnect) {
-                    alert('החיבור ליומן נכשל: ' + (e && e.code ? e.code : e));
-                }
-            }
+            // prompt ריק = ניסיון "שקט" (בלי להציג מסך הרשאה) כשכבר יש הסכמה קודמת מהמשתמש
+            client.requestAccessToken({ prompt: '' });
         }
 
         async function backfillSyncAllToGoogleCalendar() {
@@ -1614,10 +1628,6 @@
         }
 
         // --- טעינת קבוצות מ-Firestore בזמן אמת ---
-        // כאשר החיבור הידני ליומן מצליח לפני שהקבוצות נטענו מ-Firestore (למשל אחרי redirect שגרם
-        // לטעינה מחדש של כל הדף), נסמן דגל ונדחה את הסנכרון וההודעה עד שהקבוצות באמת נטענות
-        let pendingCalendarConnectSuccess = false;
-
         function subscribeToTeams() {
             if (unsubscribeTeamsListener) unsubscribeTeamsListener();
 
@@ -1632,13 +1642,6 @@
                 appState.teams = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 renderTeamsList();
                 renderGlobalCalendar();
-
-                if (pendingCalendarConnectSuccess) {
-                    pendingCalendarConnectSuccess = false;
-                    backfillSyncAllToGoogleCalendar().then(() => {
-                        alert('היומן חובר וסונכרן בהצלחה! כל האימונים הקבועים, החד-פעמיים והחגים שכבר קיימים באפליקציה נוספו ליומן שלך. מעכשיו החיבור יתחדש אוטומטית בכל פעם שתפתח את Coachoop במכשיר הזה, וכל שינוי חדש יסתנכרן תוך שניות.');
-                    });
-                }
 
                 // אם קבוצה פתוחה כרגע, נעדכן אותה אם השתנתה מבחוץ
                 if (appState.currentTeamId) {
