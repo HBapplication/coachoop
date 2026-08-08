@@ -759,6 +759,20 @@
             <h2>🔁 אימונים קבועים וחגים</h2>
             <button class="btn btn-secondary" style="width:100%; margin-bottom:15px;" onclick="showView('view-team-dashboard')">⬅ חזרה לקבוצה</button>
 
+            <div class="card" style="margin-bottom:15px; padding:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div>
+                        <strong>📆 סנכרון ליומן Google האישי שלך</strong>
+                        <p id="google-calendar-status" style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;">🔴 לא מחובר ליומן Google</p>
+                    </div>
+                    <button class="btn" style="padding:8px 16px;" onclick="connectGoogleCalendar()">🔗 חבר יומן Google</button>
+                </div>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-top:10px;">
+                    אחרי החיבור הראשון, Coachoop יתחבר ליומן שלך <strong>אוטומטית</strong> בכל פעם שתפתח את האפליקציה במכשיר הזה (ייתכן הבזק קצר של טעינה בכניסה). מופיע רק ביומן שלך - לא של הורים/שחקנים.
+                </p>
+                <button class="btn btn-secondary" style="margin-top:10px; font-size:0.8rem; padding:6px 12px;" onclick="disconnectGoogleCalendarAutoConnect()">בטל התחברות אוטומטית</button>
+            </div>
+
             <div class="card" style="margin-bottom:15px;">
                 <h3 style="color:var(--primary); margin-bottom:10px;">➕ הוספת אימון קבוע</h3>
                 <div class="form-group">
@@ -1149,6 +1163,10 @@
         let selectedPracticeId = null;     // ID של האימון הנבחר
         let currentCourtType = 'half';
 
+        // --- Google Calendar Sync ---
+        const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+        let googleCalendarAccessToken = null;
+
         // משתני קנווס
         let canvas, ctx;
         let courtCanvas, courtCtx;
@@ -1164,14 +1182,21 @@
         ];
 
         // --- אתחול ---
-        window.onload = function() {
+        window.onload = async function() {
             initCanvas();
             document.getElementById('new-note-date').valueAsDate = new Date();
+
+            await handleGoogleRedirectResult();
 
             auth.onAuthStateChanged(async (user) => {
                 if (user) {
                     currentUser = user;
                     await loadUserProfile();
+                    if (!googleCalendarAccessToken) {
+                        tryAutoConnectGoogleCalendar();
+                    } else {
+                        updateGoogleCalendarStatusUI();
+                    }
                 } else {
                     currentUser = null;
                     currentUserRole = 'coach';
@@ -1238,7 +1263,12 @@
             document.getElementById('btn-google').disabled = true;
             try {
                 const provider = new firebase.auth.GoogleAuthProvider();
-                await auth.signInWithPopup(provider);
+                provider.addScope(GOOGLE_CALENDAR_SCOPE);
+                const result = await auth.signInWithPopup(provider);
+                const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+                if (credential && credential.accessToken) {
+                    googleCalendarAccessToken = credential.accessToken;
+                }
             } catch (e) {
                 if (e.code !== 'auth/popup-closed-by-user') {
                     showAuthError(translateAuthError(e));
@@ -1247,7 +1277,268 @@
             document.getElementById('btn-google').disabled = false;
         }
 
+        const CALENDAR_AUTOCONNECT_KEY = 'coachoop_calendar_autoconnect';
+
+        function isCalendarAutoConnectEnabled() {
+            return localStorage.getItem(CALENDAR_AUTOCONNECT_KEY) === 'true';
+        }
+
+        async function connectGoogleCalendar() {
+            try {
+                const provider = new firebase.auth.GoogleAuthProvider();
+                provider.addScope(GOOGLE_CALENDAR_SCOPE);
+                const result = await auth.signInWithPopup(provider);
+                const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+                if (credential && credential.accessToken) {
+                    googleCalendarAccessToken = credential.accessToken;
+                    localStorage.setItem(CALENDAR_AUTOCONNECT_KEY, 'true');
+                    updateGoogleCalendarStatusUI();
+                    await backfillSyncAllToGoogleCalendar();
+                    alert('היומן חובר וסונכרן בהצלחה! כל האימונים הקבועים, החד-פעמיים והחגים שכבר קיימים באפליקציה נוספו ליומן שלך. מעכשיו החיבור יתחדש אוטומטית בכל פעם שתפתח את Coachoop במכשיר הזה, וכל שינוי חדש יסתנכרן תוך שניות.');
+                } else {
+                    alert('החיבור ליומן לא הושלם - נסה שוב.');
+                }
+            } catch (e) {
+                console.error('שגיאה בחיבור ליומן Google:', e);
+                alert('החיבור ליומן נכשל. ודא שאישרת את בקשת ההרשאה ונסה שוב.');
+            }
+        }
+
+        function disconnectGoogleCalendarAutoConnect() {
+            if (!confirm('לבטל את ההתחברות האוטומטית ליומן? תוכל תמיד לחבר שוב ידנית בעתיד.')) return;
+            localStorage.removeItem(CALENDAR_AUTOCONNECT_KEY);
+            googleCalendarAccessToken = null;
+            updateGoogleCalendarStatusUI();
+        }
+
+        async function tryAutoConnectGoogleCalendar() {
+            if (!isCalendarAutoConnectEnabled() || googleCalendarAccessToken) return;
+            try {
+                const provider = new firebase.auth.GoogleAuthProvider();
+                provider.addScope(GOOGLE_CALENDAR_SCOPE);
+                await auth.signInWithRedirect(provider);
+                // הדף ינווט מחדש לגוגל ובחזרה - הקוד שאחרי זה לא ימשיך לרוץ באותה טעינה
+            } catch (e) {
+                console.warn('חיבור אוטומטי ליומן נכשל:', e);
+            }
+        }
+
+        async function handleGoogleRedirectResult() {
+            try {
+                const result = await auth.getRedirectResult();
+                if (result && result.user) {
+                    const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+                    if (credential && credential.accessToken) {
+                        googleCalendarAccessToken = credential.accessToken;
+                    }
+                }
+            } catch (e) {
+                console.warn('שגיאה בקבלת תוצאת חיבור אוטומטי ליומן:', e);
+            }
+        }
+
+        async function backfillSyncAllToGoogleCalendar() {
+            for (const team of appState.teams) {
+                for (const rule of (team.recurringPractices || [])) {
+                    await syncRecurringRuleToGoogleCalendar(rule);
+                }
+
+                for (const holiday of (team.holidays || [])) {
+                    await syncHolidayToGoogleCalendar(holiday);
+                }
+
+                const dateKeys = Object.keys(team.practices || {});
+                for (const dateKey of dateKeys) {
+                    let list = team.practices[dateKey];
+                    if (!Array.isArray(list)) list = [list];
+                    for (const practice of list) {
+                        await syncPracticeToGoogleCalendar(practice, dateKey);
+                    }
+                }
+
+                await saveTeamToFirestore(team);
+            }
+        }
+
+        function isGoogleCalendarConnected() {
+            return !!googleCalendarAccessToken;
+        }
+
+        function updateGoogleCalendarStatusUI() {
+            const el = document.getElementById('google-calendar-status');
+            if (!el) return;
+            el.innerText = isGoogleCalendarConnected() ? '🟢 מחובר ליומן Google' : '🔴 לא מחובר ליומן Google';
+        }
+
+        async function googleCalendarRequest(method, pathAndQuery, body) {
+            if (!googleCalendarAccessToken) return null;
+            try {
+                const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/${pathAndQuery}`, {
+                    method,
+                    headers: {
+                        'Authorization': 'Bearer ' + googleCalendarAccessToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: body ? JSON.stringify(body) : undefined
+                });
+
+                if (res.status === 401) {
+                    googleCalendarAccessToken = null;
+                    updateGoogleCalendarStatusUI();
+                    console.warn('חיבור היומן פג תוקף - יש להתחבר מחדש דרך "חבר יומן Google".');
+                    return null;
+                }
+                if (!res.ok) {
+                    console.warn('שגיאת Google Calendar API:', res.status, await res.text());
+                    return null;
+                }
+                if (res.status === 204) return {};
+                return await res.json();
+            } catch (e) {
+                console.warn('שגיאת רשת בסנכרון ליומן Google:', e);
+                return null;
+            }
+        }
+
+        const RRULE_WEEKDAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+        function addDaysToDateStr(dateStr, days) {
+            const d = parseDateKey(dateStr);
+            d.setDate(d.getDate() + days);
+            return formatDateKey(d);
+        }
+
+        // --- סנכרון אימון חד-פעמי ---
+        async function syncPracticeToGoogleCalendar(practice, dateKey) {
+            if (!isGoogleCalendarConnected() || !practice.time) return;
+
+            const endTimeStr = practice.endTime || calcEndTime(practice.time, 90);
+            const eventBody = {
+                summary: practice.title || 'אימון',
+                location: practice.location || '',
+                start: { dateTime: `${dateKey}T${practice.time}:00` },
+                end: { dateTime: `${dateKey}T${endTimeStr}:00` }
+            };
+
+            try {
+                if (practice.googleEventId) {
+                    const updated = await googleCalendarRequest('PATCH', `events/${practice.googleEventId}`, eventBody);
+                    if (!updated) practice.googleEventId = null;
+                }
+                if (!practice.googleEventId) {
+                    const created = await googleCalendarRequest('POST', 'events', eventBody);
+                    if (created && created.id) practice.googleEventId = created.id;
+                }
+            } catch (e) {
+                console.warn('שגיאה בסנכרון אימון ליומן:', e);
+            }
+        }
+
+        async function deletePracticeGoogleEvent(practice) {
+            if (!isGoogleCalendarConnected() || !practice || !practice.googleEventId) return;
+            try {
+                await googleCalendarRequest('DELETE', `events/${practice.googleEventId}`);
+            } catch (e) {
+                console.warn('שגיאה במחיקת אימון מהיומן:', e);
+            }
+        }
+
+        // --- סנכרון אימון קבוע (אירוע חוזר ביומן) ---
+        async function syncRecurringRuleToGoogleCalendar(rule) {
+            if (!isGoogleCalendarConnected() || !rule.time) return;
+
+            const baseDate = rule.startDate || formatDateKey(new Date());
+            const endTimeStr = rule.endTime || calcEndTime(rule.time, 90);
+
+            let rrule = `RRULE:FREQ=WEEKLY;BYDAY=${RRULE_WEEKDAY[rule.weekday]}`;
+            if (rule.endDate) {
+                rrule += `;UNTIL=${rule.endDate.replace(/-/g, '')}T235959Z`;
+            }
+
+            const eventBody = {
+                summary: rule.title || 'אימון קבוע',
+                location: rule.location || '',
+                start: { dateTime: `${baseDate}T${rule.time}:00` },
+                end: { dateTime: `${baseDate}T${endTimeStr}:00` },
+                recurrence: [rrule]
+            };
+
+            try {
+                if (rule.googleEventId) {
+                    const updated = await googleCalendarRequest('PATCH', `events/${rule.googleEventId}`, eventBody);
+                    if (!updated) rule.googleEventId = null;
+                }
+                if (!rule.googleEventId) {
+                    const created = await googleCalendarRequest('POST', 'events', eventBody);
+                    if (created && created.id) rule.googleEventId = created.id;
+                }
+            } catch (e) {
+                console.warn('שגיאה בסנכרון אימון קבוע ליומן:', e);
+            }
+        }
+
+        async function deleteRecurringRuleGoogleEvent(rule) {
+            if (!isGoogleCalendarConnected() || !rule || !rule.googleEventId) return;
+            try {
+                await googleCalendarRequest('DELETE', `events/${rule.googleEventId}`);
+            } catch (e) {
+                console.warn('שגיאה במחיקת אימון קבוע מהיומן:', e);
+            }
+        }
+
+        // ביטול מופע בודד של אימון קבוע (כשעורכים/מבטלים ליום ספציפי)
+        async function cancelRecurringInstanceInGoogleCalendar(rule, dateKey) {
+            if (!isGoogleCalendarConnected() || !rule || !rule.googleEventId) return;
+            try {
+                const timeMin = encodeURIComponent(`${dateKey}T00:00:00Z`);
+                const timeMax = encodeURIComponent(`${dateKey}T23:59:59Z`);
+                const instancesRes = await googleCalendarRequest('GET', `events/${rule.googleEventId}/instances?timeMin=${timeMin}&timeMax=${timeMax}`);
+                if (instancesRes && instancesRes.items && instancesRes.items.length > 0) {
+                    const instanceId = instancesRes.items[0].id;
+                    await googleCalendarRequest('DELETE', `events/${instanceId}`);
+                }
+            } catch (e) {
+                console.warn('שגיאה בביטול מופע בודד ביומן:', e);
+            }
+        }
+
+        // --- סנכרון חג (אירוע יום שלם) ---
+        async function syncHolidayToGoogleCalendar(holiday) {
+            if (!isGoogleCalendarConnected()) return;
+
+            const endExclusive = addDaysToDateStr(holiday.endDate || holiday.startDate, 1);
+            const eventBody = {
+                summary: `🎌 ${holiday.name} (אין אימונים)`,
+                start: { date: holiday.startDate },
+                end: { date: endExclusive }
+            };
+
+            try {
+                if (holiday.googleEventId) {
+                    const updated = await googleCalendarRequest('PATCH', `events/${holiday.googleEventId}`, eventBody);
+                    if (!updated) holiday.googleEventId = null;
+                }
+                if (!holiday.googleEventId) {
+                    const created = await googleCalendarRequest('POST', 'events', eventBody);
+                    if (created && created.id) holiday.googleEventId = created.id;
+                }
+            } catch (e) {
+                console.warn('שגיאה בסנכרון חג ליומן:', e);
+            }
+        }
+
+        async function deleteHolidayGoogleEvent(holiday) {
+            if (!isGoogleCalendarConnected() || !holiday || !holiday.googleEventId) return;
+            try {
+                await googleCalendarRequest('DELETE', `events/${holiday.googleEventId}`);
+            } catch (e) {
+                console.warn('שגיאה במחיקת חג מהיומן:', e);
+            }
+        }
+
         function handleLogout() {
+            googleCalendarAccessToken = null;
+            localStorage.removeItem(CALENDAR_AUTOCONNECT_KEY);
             auth.signOut();
         }
 
@@ -1532,6 +1823,7 @@
             showView('view-recurring');
             renderRecurringList();
             renderHolidayList();
+            updateGoogleCalendarStatusUI();
         }
 
         async function addRecurringPractice() {
@@ -1552,7 +1844,7 @@
             }
 
             if (!team.recurringPractices) team.recurringPractices = [];
-            team.recurringPractices.push({
+            const newRule = {
                 id: 'rec_' + Date.now(),
                 title,
                 weekday,
@@ -1562,8 +1854,10 @@
                 type: 'half',
                 startDate,
                 endDate
-            });
+            };
+            team.recurringPractices.push(newRule);
 
+            await syncRecurringRuleToGoogleCalendar(newRule);
             saveState();
 
             document.getElementById('recurring-title-input').value = '';
@@ -1604,9 +1898,12 @@
             `).join('');
         }
 
-        function deleteRecurringPractice(ruleId) {
+        async function deleteRecurringPractice(ruleId) {
             const team = getCurrentTeam();
             if (!team || !confirm('למחוק את האימון הקבוע? כל המופעים העתידיים שלו יימחקו מהלוח (אימונים בודדים שכבר נערכו ידנית יישארו).')) return;
+
+            const rule = (team.recurringPractices || []).find(r => r.id === ruleId);
+            await deleteRecurringRuleGoogleEvent(rule);
 
             team.recurringPractices = (team.recurringPractices || []).filter(r => r.id !== ruleId);
 
@@ -1636,8 +1933,10 @@
             }
 
             if (!team.holidays) team.holidays = [];
-            team.holidays.push({ id: 'hol_' + Date.now(), name, startDate, endDate });
+            const newHoliday = { id: 'hol_' + Date.now(), name, startDate, endDate };
+            team.holidays.push(newHoliday);
 
+            await syncHolidayToGoogleCalendar(newHoliday);
             saveState();
 
             document.getElementById('holiday-name-input').value = '';
@@ -1675,9 +1974,12 @@
             `).join('');
         }
 
-        function deleteHoliday(holidayId) {
+        async function deleteHoliday(holidayId) {
             const team = getCurrentTeam();
             if (!team) return;
+
+            const holiday = (team.holidays || []).find(h => h.id === holidayId);
+            await deleteHolidayGoogleEvent(holiday);
 
             team.holidays = (team.holidays || []).filter(h => h.id !== holidayId);
             saveState();
@@ -2559,7 +2861,7 @@
             });
         }
 
-        function editVirtualPracticeForDate(recurringId, dateKey) {
+        async function editVirtualPracticeForDate(recurringId, dateKey) {
             const team = getCurrentTeam();
             const rule = (team.recurringPractices || []).find(r => r.id === recurringId);
             if (!rule) return;
@@ -2568,7 +2870,7 @@
             if (!Array.isArray(team.practices[dateKey])) team.practices[dateKey] = [];
 
             const newId = 'prc_' + Date.now();
-            team.practices[dateKey].push({
+            const materializedPractice = {
                 id: newId,
                 title: rule.title,
                 time: rule.time || '',
@@ -2577,27 +2879,35 @@
                 notes: '',
                 exercises: [],
                 sourceRecurringId: recurringId
-            });
+            };
+            team.practices[dateKey].push(materializedPractice);
 
             if (!team.practiceSkips) team.practiceSkips = {};
             if (!team.practiceSkips[dateKey]) team.practiceSkips[dateKey] = [];
             if (!team.practiceSkips[dateKey].includes(recurringId)) {
                 team.practiceSkips[dateKey].push(recurringId);
             }
+
+            await cancelRecurringInstanceInGoogleCalendar(rule, dateKey);
+            await syncPracticeToGoogleCalendar(materializedPractice, dateKey);
 
             saveState();
             editPractice(newId);
         }
 
-        function skipVirtualPracticeForDate(recurringId, dateKey) {
+        async function skipVirtualPracticeForDate(recurringId, dateKey) {
             if (!confirm('לבטל את האימון הקבוע ליום זה בלבד? (הכלל עצמו יישאר פעיל בשאר השבועות)')) return;
 
             const team = getCurrentTeam();
+            const rule = (team.recurringPractices || []).find(r => r.id === recurringId);
+
             if (!team.practiceSkips) team.practiceSkips = {};
             if (!team.practiceSkips[dateKey]) team.practiceSkips[dateKey] = [];
             if (!team.practiceSkips[dateKey].includes(recurringId)) {
                 team.practiceSkips[dateKey].push(recurringId);
             }
+
+            await cancelRecurringInstanceInGoogleCalendar(rule, dateKey);
 
             saveState();
             renderDayPracticesList();
@@ -2630,7 +2940,7 @@
         }
 
         // --- פונקציית העתקת/שכפול תרגיל ---
-        function duplicatePractice(practiceId) {
+        async function duplicatePractice(practiceId) {
             const team = getCurrentTeam();
             if (!team || !selectedPracticeDateStr) return;
 
@@ -2671,6 +2981,8 @@
             };
 
             team.practices[targetDate].push(duplicatedPractice);
+
+            await syncPracticeToGoogleCalendar(duplicatedPractice, targetDate);
             saveState();
 
             alert(`התרגיל/אימון הועתק בהצלחה לתאריך ${targetDate}!`);
@@ -2796,7 +3108,7 @@
             document.getElementById('btn-ex-full').classList.toggle('selected', type === 'full');
         }
 
-        function savePracticeData(backToPracticeEdit = false) {
+        async function savePracticeData(backToPracticeEdit = false) {
             const team = getCurrentTeam();
             if (!team || !selectedPracticeDateStr || !selectedPracticeId) return;
 
@@ -2813,6 +3125,10 @@
                 practice.notes = document.getElementById('practice-notes-input').value;
             }
 
+            if (practice) {
+                await syncPracticeToGoogleCalendar(practice, selectedPracticeDateStr);
+            }
+
             saveState();
             alert('האימון נשמר!');
 
@@ -2823,12 +3139,16 @@
             }
         }
 
-        function deletePracticeById(practiceId) {
+        async function deletePracticeById(practiceId) {
             if (confirm('האם למחוק תרגיל זה?')) {
                 const team = getCurrentTeam();
                 if (team.practices && team.practices[selectedPracticeDateStr]) {
                     let list = team.practices[selectedPracticeDateStr];
                     if (!Array.isArray(list)) list = [list];
+
+                    const practiceToDelete = list.find(p => p.id === practiceId);
+                    await deletePracticeGoogleEvent(practiceToDelete);
+
                     team.practices[selectedPracticeDateStr] = list.filter(p => p.id !== practiceId);
                     saveState();
                     renderDayPracticesList();
