@@ -1306,6 +1306,9 @@
             try {
                 const provider = new firebase.auth.GoogleAuthProvider();
                 provider.addScope(GOOGLE_CALENDAR_SCOPE);
+                // מאלץ את Google להציג תמיד את מסך ההרשאה ולהחזיר טוקן גישה טרי,
+                // גם אם המשתמש כבר מחובר לאותו חשבון Google דרך Firebase
+                provider.setCustomParameters({ prompt: 'consent' });
                 const result = await auth.signInWithPopup(provider);
                 const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
                 if (credential && credential.accessToken) {
