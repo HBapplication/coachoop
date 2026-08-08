@@ -605,6 +605,7 @@
             <span id="user-email-badge" class="active-team-badge"></span>
             <span id="active-team-name" class="active-team-badge" style="display:none;">אין קבוצה נבחרת</span>
             <button class="btn-header" onclick="showView('view-teams-list')">רשימת קבוצות</button>
+            <button class="btn-header" onclick="showView('view-account-settings')">⚙️ הגדרות</button>
             <button class="btn-header" onclick="handleLogout()">התנתק</button>
         </div>
     </header>
@@ -735,6 +736,28 @@
         </div>
 
         <!-- ========================================== -->
+        <!-- הגדרות חשבון -->
+        <!-- ========================================== -->
+        <div id="view-account-settings" class="view">
+            <h2>⚙️ הגדרות חשבון</h2>
+            <button class="btn btn-secondary" style="width:100%; margin-bottom:15px;" onclick="showView('view-teams-list')">⬅ חזרה לרשימת קבוצות</button>
+
+            <div class="card" style="margin-bottom:15px; padding:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div>
+                        <strong>📆 סנכרון ליומן Google האישי שלך</strong>
+                        <p id="google-calendar-status" style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;">🔴 לא מחובר ליומן Google</p>
+                    </div>
+                    <button class="btn" style="padding:8px 16px;" onclick="connectGoogleCalendar()">🔗 חבר יומן Google</button>
+                </div>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-top:10px;">
+                    אחרי החיבור הראשון, Coachoop יתחבר ליומן שלך <strong>אוטומטית</strong> בכל פעם שתפתח את האפליקציה במכשיר הזה (ייתכן הבזק קצר של טעינה בכניסה). מופיע רק ביומן שלך - לא של הורים/שחקנים. החיבור חל על כל הקבוצות שלך יחד, לא רק על קבוצה מסוימת.
+                </p>
+                <button class="btn btn-secondary" style="margin-top:10px; font-size:0.8rem; padding:6px 12px;" onclick="disconnectGoogleCalendarAutoConnect()">בטל התחברות אוטומטית</button>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
         <!-- תפריט ראשי של הקבוצה הנבחרת -->
         <!-- ========================================== -->
         <div id="view-team-dashboard" class="view">
@@ -762,15 +785,11 @@
             <div class="card" style="margin-bottom:15px; padding:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                     <div>
-                        <strong>📆 סנכרון ליומן Google האישי שלך</strong>
-                        <p id="google-calendar-status" style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;">🔴 לא מחובר ליומן Google</p>
+                        <strong>📆 סנכרון ליומן Google</strong>
+                        <p id="google-calendar-status-recurring" style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;">🔴 לא מחובר ליומן Google</p>
                     </div>
-                    <button class="btn" style="padding:8px 16px;" onclick="connectGoogleCalendar()">🔗 חבר יומן Google</button>
+                    <button class="btn btn-secondary" style="padding:8px 16px;" onclick="showView('view-account-settings')">⚙️ נהל בהגדרות חשבון</button>
                 </div>
-                <p style="font-size:0.8rem; color:var(--text-muted); margin-top:10px;">
-                    אחרי החיבור הראשון, Coachoop יתחבר ליומן שלך <strong>אוטומטית</strong> בכל פעם שתפתח את האפליקציה במכשיר הזה (ייתכן הבזק קצר של טעינה בכניסה). מופיע רק ביומן שלך - לא של הורים/שחקנים.
-                </p>
-                <button class="btn btn-secondary" style="margin-top:10px; font-size:0.8rem; padding:6px 12px;" onclick="disconnectGoogleCalendarAutoConnect()">בטל התחברות אוטומטית</button>
             </div>
 
             <div class="card" style="margin-bottom:15px;">
@@ -1365,9 +1384,11 @@
         }
 
         function updateGoogleCalendarStatusUI() {
+            const statusText = isGoogleCalendarConnected() ? '🟢 מחובר ליומן Google' : '🔴 לא מחובר ליומן Google';
             const el = document.getElementById('google-calendar-status');
-            if (!el) return;
-            el.innerText = isGoogleCalendarConnected() ? '🟢 מחובר ליומן Google' : '🔴 לא מחובר ליומן Google';
+            if (el) el.innerText = statusText;
+            const elRecurring = document.getElementById('google-calendar-status-recurring');
+            if (elRecurring) elRecurring.innerText = statusText;
         }
 
         async function googleCalendarRequest(method, pathAndQuery, body) {
@@ -1639,6 +1660,7 @@
             if (viewId === 'view-players-list') renderPlayersList();
             if (viewId === 'view-notes-main') renderNotesList();
             if (viewId === 'view-teams-list') { renderTeamsList(); renderGlobalCalendar(); }
+            if (viewId === 'view-account-settings' || viewId === 'view-recurring') updateGoogleCalendarStatusUI();
         }
 
         function goBack() {
