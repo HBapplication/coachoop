@@ -1297,6 +1297,9 @@
         }
 
         const CALENDAR_AUTOCONNECT_KEY = 'coachoop_calendar_autoconnect';
+        // דגל זמני שמסמן שהמשתמש לחץ באופן יזום על "חבר יומן Google" (בניגוד לחיבור אוטומטי שקט ברקע),
+        // כדי שאחרי החזרה מ-Google (redirect) נדע אם להציג הודעת הצלחה/כישלון או לא
+        const CALENDAR_MANUAL_CONNECT_PENDING_KEY = 'coachoop_calendar_manual_connect_pending';
 
         function isCalendarAutoConnectEnabled() {
             return localStorage.getItem(CALENDAR_AUTOCONNECT_KEY) === 'true';
@@ -1306,22 +1309,17 @@
             try {
                 const provider = new firebase.auth.GoogleAuthProvider();
                 provider.addScope(GOOGLE_CALENDAR_SCOPE);
-                // מאלץ את Google להציג תמיד את מסך ההרשאה ולהחזיר טוקן גישה טרי,
-                // גם אם המשתמש כבר מחובר לאותו חשבון Google דרך Firebase
+                // מאלץ את Google להציג תמיד את מסך ההרשאה ולהחזיר טוקן גישה טרי
                 provider.setCustomParameters({ prompt: 'consent' });
-                const result = await auth.signInWithPopup(provider);
-                const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
-                if (credential && credential.accessToken) {
-                    googleCalendarAccessToken = credential.accessToken;
-                    localStorage.setItem(CALENDAR_AUTOCONNECT_KEY, 'true');
-                    updateGoogleCalendarStatusUI();
-                    await backfillSyncAllToGoogleCalendar();
-                    alert('היומן חובר וסונכרן בהצלחה! כל האימונים הקבועים, החד-פעמיים והחגים שכבר קיימים באפליקציה נוספו ליומן שלך. מעכשיו החיבור יתחדש אוטומטית בכל פעם שתפתח את Coachoop במכשיר הזה, וכל שינוי חדש יסתנכרן תוך שניות.');
-                } else {
-                    alert('החיבור ליומן לא הושלם - נסה שוב.');
-                }
+                // משתמשים ב-redirect ולא ב-popup: פופ-אפים נכשלים בשקט בדפדפנים שחוסמים
+                // תקשורת בין חלונות (third-party storage) בין הדומיין של האתר לדומיין של Firebase Auth.
+                // redirect לא תלוי בתקשורת הזו ולכן אמין הרבה יותר.
+                localStorage.setItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY, 'true');
+                await auth.signInWithRedirect(provider);
+                // הדף ינווט מחדש לגוגל ובחזרה - הקוד שאחרי זה לא ימשיך לרוץ באותה טעינה
             } catch (e) {
                 console.error('שגיאה בחיבור ליומן Google:', e);
+                localStorage.removeItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY);
                 alert('החיבור ליומן נכשל. ודא שאישרת את בקשת ההרשאה ונסה שוב.');
             }
         }
@@ -1346,16 +1344,32 @@
         }
 
         async function handleGoogleRedirectResult() {
+            const wasManualConnect = localStorage.getItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY) === 'true';
+            localStorage.removeItem(CALENDAR_MANUAL_CONNECT_PENDING_KEY);
             try {
                 const result = await auth.getRedirectResult();
                 if (result && result.user) {
                     const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
                     if (credential && credential.accessToken) {
                         googleCalendarAccessToken = credential.accessToken;
+                        localStorage.setItem(CALENDAR_AUTOCONNECT_KEY, 'true');
+                        updateGoogleCalendarStatusUI();
+                        if (wasManualConnect) {
+                            // הקבוצות עוד לא נטענו מ-Firestore בשלב הזה (הדף רק עלה מחדש) -
+                            // נדחה את הסנכרון וההודעה לרגע שבו subscribeToTeams תסיים לטעון אותן
+                            pendingCalendarConnectSuccess = true;
+                        }
+                    } else if (wasManualConnect) {
+                        alert('החיבור ליומן לא הושלם - נסה שוב.');
                     }
+                } else if (wasManualConnect) {
+                    alert('החיבור ליומן לא הושלם - נסה שוב.');
                 }
             } catch (e) {
-                console.warn('שגיאה בקבלת תוצאת חיבור אוטומטי ליומן:', e);
+                console.warn('שגיאה בקבלת תוצאת חיבור ליומן:', e);
+                if (wasManualConnect) {
+                    alert('החיבור ליומן נכשל. ודא שאישרת את בקשת ההרשאה ונסה שוב.');
+                }
             }
         }
 
@@ -1592,6 +1606,10 @@
         }
 
         // --- טעינת קבוצות מ-Firestore בזמן אמת ---
+        // כאשר החיבור הידני ליומן מצליח לפני שהקבוצות נטענו מ-Firestore (למשל אחרי redirect שגרם
+        // לטעינה מחדש של כל הדף), נסמן דגל ונדחה את הסנכרון וההודעה עד שהקבוצות באמת נטענות
+        let pendingCalendarConnectSuccess = false;
+
         function subscribeToTeams() {
             if (unsubscribeTeamsListener) unsubscribeTeamsListener();
 
@@ -1606,6 +1624,13 @@
                 appState.teams = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 renderTeamsList();
                 renderGlobalCalendar();
+
+                if (pendingCalendarConnectSuccess) {
+                    pendingCalendarConnectSuccess = false;
+                    backfillSyncAllToGoogleCalendar().then(() => {
+                        alert('היומן חובר וסונכרן בהצלחה! כל האימונים הקבועים, החד-פעמיים והחגים שכבר קיימים באפליקציה נוספו ליומן שלך. מעכשיו החיבור יתחדש אוטומטית בכל פעם שתפתח את Coachoop במכשיר הזה, וכל שינוי חדש יסתנכרן תוך שניות.');
+                    });
+                }
 
                 // אם קבוצה פתוחה כרגע, נעדכן אותה אם השתנתה מבחוץ
                 if (appState.currentTeamId) {
